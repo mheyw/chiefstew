@@ -1,0 +1,540 @@
+import Foundation
+
+/// Read-only git for the engine: a fixed set of commands that never write, with
+/// `GIT_OPTIONAL_LOCKS=0`.
+struct GitReader: Sendable {
+    let repo: String
+
+    func run(_ args: [String]) -> String? {
+        guard
+            let r = try? CommandRunner.runBlocking(
+                "/usr/bin/git", ["-C", repo] + args, cwd: nil,
+                environment: ["GIT_OPTIONAL_LOCKS": "0", "PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()],
+                timeout: 10),
+            r.exitCode == 0, !r.timedOut
+        else { return nil }
+        return String(decoding: r.stdout, as: UTF8.self)
+    }
+
+    func lines(_ args: [String]) -> [String] {
+        (run(args) ?? "").split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+    }
+
+    struct Worktree { var path: String; var branch: String?; var head: String }
+
+    func worktrees() -> [Worktree] {
+        (run(["worktree", "list", "--porcelain"]) ?? "").components(separatedBy: "\n\n").compactMap { block in
+            var path: String?
+            var branch: String?
+            var head = ""
+            for line in block.split(separator: "\n") {
+                if line.hasPrefix("worktree ") { path = String(line.dropFirst(9)) }
+                if line.hasPrefix("branch refs/heads/") { branch = String(line.dropFirst(18)) }
+                if line.hasPrefix("HEAD ") { head = String(line.dropFirst(5)) }
+            }
+            return path.map { Worktree(path: PathMatch.normalize($0), branch: branch, head: head) }
+        }
+    }
+
+    func branches() -> [String] { lines(["for-each-ref", "--format=%(refname:short)", "refs/heads"]) }
+
+    /// The branch builds merge into: origin's default if known, else main, else master.
+    func mainBranch() -> String {
+        if let head = run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines), head.hasPrefix("origin/")
+        {
+            let name = String(head.dropFirst(7))
+            if run(["rev-parse", "--verify", "--quiet", "refs/heads/\(name)"]) != nil { return name }
+        }
+        for name in ["main", "master"] where run(["rev-parse", "--verify", "--quiet", "refs/heads/\(name)"]) != nil {
+            return name
+        }
+        return "HEAD"
+    }
+
+    func isMerged(_ ref: String, into main: String) -> Bool {
+        run(["merge-base", "--is-ancestor", ref, main]) != nil
+    }
+
+    func lastCommit(_ ref: String) -> (date: Date, subject: String)? {
+        guard let out = run(["log", "-1", "--format=%ct%x00%s", ref]) else { return nil }
+        let parts = out.trimmingCharacters(in: .newlines).components(separatedBy: "\u{0}")
+        guard let t = parts.first.flatMap(Double.init) else { return nil }
+        return (Date(timeIntervalSince1970: t), parts.count > 1 ? parts[1] : "")
+    }
+
+    func behind(_ ref: String, _ main: String) -> Int? {
+        run(["rev-list", "--count", "\(ref)..\(main)"]).flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    func show(_ ref: String, _ path: String) -> String? {
+        guard let out = run(["show", "\(ref):\(path)"]), out.utf8.count <= WorkflowEngine.maxFile else { return nil }
+        return out
+    }
+
+    func list(_ ref: String, _ dir: String) -> [String] {
+        lines(["ls-tree", "--name-only", "\(ref):\(dir.isEmpty ? "" : dir)"])
+    }
+}
+
+/// What the engine made of one build, field by field: for `chiefstew check` and the wizard.
+public struct BuildDiagnostics: Sendable, Equatable {
+    public struct Note: Sendable, Equatable {
+        public var field: String
+        public var ok: Bool
+        public var detail: String
+    }
+
+    public var num: String
+    public var slug: String
+    public var source: String
+    public var notes: [Note]
+}
+
+/// Turns a `WorkflowSpec` into contract status (§4) by reading the repo. Read-only: files
+/// inside the repo and its worktrees, and `GitReader`'s commands.
+public struct WorkflowEngine: Sendable {
+    public static let maxFile = 256 * 1024
+
+    public let repo: String
+    public let spec: WorkflowSpec
+    let git: GitReader
+
+    public init(repo: String, spec: WorkflowSpec) {
+        self.repo = PathMatch.normalize(repo)
+        self.spec = spec
+        self.git = GitReader(repo: self.repo)
+    }
+
+    struct Candidate {
+        var num: String
+        var slug: String
+        var branch: String
+        var ref: String
+        /// The checkout on disk, if there is one.
+        var worktree: String?
+    }
+
+    public func run(now: Date = Date()) -> (report: StatusReport, diagnostics: [BuildDiagnostics]) {
+        let r = runExplained(now: now)
+        return (r.report, r.diagnostics)
+    }
+
+    /// Also says what was considered and skipped, and why (for `chiefstew check`).
+    public func runExplained(now: Date = Date()) -> (report: StatusReport, diagnostics: [BuildDiagnostics], skipped: [String]) {
+        let main = git.mainBranch()
+        let worktrees = git.worktrees()
+        var skipped: [String] = []
+        var rows: [BuildRow] = []
+        var diagnostics: [BuildDiagnostics] = []
+        for c in candidates(main: main, worktrees: worktrees, skipped: &skipped) {
+            let (row, notes) = build(c, main: main, now: now)
+            rows.append(row)
+            diagnostics.append(BuildDiagnostics(num: c.num, slug: c.slug, source: source(c), notes: notes))
+        }
+        return (StatusReport(repo: repo, builds: rows), diagnostics, skipped)
+    }
+
+    private func source(_ c: Candidate) -> String {
+        if let wt = c.worktree { return "\(c.branch) · \(PathMatch.relative(wt, to: repo) == wt ? wt : PathMatch.relative(wt, to: repo))" }
+        return "\(c.branch) · not checked out (read from git)"
+    }
+
+    // MARK: finding builds
+
+    func candidates(main: String, worktrees: [GitReader.Worktree]) -> [Candidate] {
+        var ignored: [String] = []
+        return candidates(main: main, worktrees: worktrees, skipped: &ignored)
+    }
+
+    func candidates(main: String, worktrees: [GitReader.Worktree], skipped: inout [String]) -> [Candidate] {
+        let byBranch = Dictionary(
+            worktrees.compactMap { w in w.branch.map { ($0, w.path) } }, uniquingKeysWith: { a, _ in a })
+        switch spec.builds {
+        // A branch with no commits beyond main looks exactly like a merged one to git (its tip is
+        // already on main). So a worktree that exists counts as in flight (people remove them
+        // when done), and a contained branch is only hidden when nothing has it checked out.
+        case .worktrees:
+            return worktrees.filter { $0.path != repo }.compactMap { w in
+                let ref = w.branch ?? w.head
+                if w.branch == main {
+                    skipped.append("\(w.path): it has the main branch (\(main)) checked out")
+                    return nil
+                }
+                return Candidate(
+                    num: URL(fileURLWithPath: w.path).lastPathComponent, slug: w.branch ?? "detached",
+                    branch: w.branch ?? "(detached \(w.head.prefix(8)))", ref: ref, worktree: w.path)
+            }
+        case .branches(let pattern):
+            guard let re = Self.templateRegex(pattern) else { return [] }
+            var out: [Candidate] = []
+            for branch in git.branches() {
+                if branch == main {
+                    skipped.append("\(branch): the main branch")
+                    continue
+                }
+                guard let g = Self.groups(re, branch) else {
+                    skipped.append("\(branch): doesn't match \(pattern)")
+                    continue
+                }
+                if byBranch[branch] == nil && git.isMerged(branch, into: main) {
+                    skipped.append("\(branch): already merged into \(main)")
+                    continue
+                }
+                out.append(
+                    Candidate(
+                        num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch, ref: branch,
+                        worktree: byBranch[branch]))
+            }
+            return out.sorted { $0.num < $1.num }
+        case .folders(let pattern):
+            let dir = (pattern as NSString).deletingLastPathComponent
+            guard let re = Self.templateRegex((pattern as NSString).lastPathComponent) else { return [] }
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: (repo as NSString).appendingPathComponent(dir))) ?? []
+            return names.sorted().compactMap { name in
+                guard let g = Self.groups(re, name) else { return nil }
+                return Candidate(
+                    num: g["num"] ?? name, slug: g["slug"] ?? name, branch: main, ref: main, worktree: repo)
+            }
+        }
+    }
+
+    // MARK: one build
+
+    func build(_ c: Candidate, main: String, now: Date) -> (BuildRow, [BuildDiagnostics.Note]) {
+        var notes: [BuildDiagnostics.Note] = []
+        func note(_ field: String, _ ok: Bool, _ detail: String) {
+            notes.append(.init(field: field, ok: ok, detail: detail))
+        }
+
+        // The build's folder (where its files are), relative to its checkout.
+        var base = ""
+        if case .folders(let pattern) = spec.builds {
+            base = (pattern as NSString).deletingLastPathComponent
+            base = (base as NSString).appendingPathComponent(
+                Self.fill((pattern as NSString).lastPathComponent, c, gate: nil))
+            // The folder name itself was matched; rebuild it from the real listing instead.
+            base = folderFor(c, pattern: pattern) ?? base
+        } else if let folder = spec.folder {
+            if let f = resolveFolder(Self.fill(folder, c, gate: nil), c) {
+                base = f
+                note("folder", true, f)
+            } else {
+                note("folder", false, "no folder matches \(Self.fill(folder, c, gate: nil))")
+            }
+        }
+
+        let last = git.lastCommit(c.ref)
+        var row = BuildRow(
+            num: c.num, slug: c.slug, branch: c.branch, state: "", lastCommitAt: last?.date ?? now,
+            merged: false, worktree: c.worktree, behind: git.behind(c.ref, main))
+
+        // state
+        if let rule = spec.state {
+            let (text, file, why) = read(rule.at, base: base, c)
+            if let text, let value = Self.extract(text, pick: rule.pick, match: rule.match, group: "state") {
+                row.state = Self.plain(value)
+                note("state", true, "\(file ?? "") → \"\(String(row.state.prefix(70)))\"")
+                if let file, let wt = c.worktree { row.progress = (wt as NSString).appendingPathComponent(file) }
+            } else {
+                row.state = Self.plain(last?.subject ?? "")
+                note("state", false, (why ?? "\(file ?? "file") matched nothing") + "; using the last commit subject")
+            }
+        } else {
+            row.state = Self.plain(last?.subject ?? "")
+        }
+
+        // lane, parked, closed
+        if let rule = spec.lane {
+            let (text, file, why) = read(rule.at, base: base, c)
+            let value = text.flatMap { Self.extract($0, pick: rule.pick, match: rule.match, group: "lane") }
+            row.lane = value ?? rule.fallback
+            note("lane", value != nil || rule.fallback != nil, value.map { "\(file ?? "") → \($0)" } ?? (why ?? "no match; default \(rule.fallback ?? "none")"))
+        }
+        if let re = spec.parked { row.parkedFlag = Self.matches(re, row.state) }
+        if let re = spec.closed, Self.matches(re, row.state) { row.flags.append("closed-unmerged") }
+
+        // phases
+        if let rule = spec.phases {
+            let (text, file, why) = read(rule.at, base: base, c)
+            if let text {
+                var phases = Self.phases(text, rule.list)
+                if let skip = spec.skip {
+                    for i in phases.indices {
+                        phases[i].skipped = row.lane == skip.lane && skip.phases.contains(phases[i].n)
+                    }
+                }
+                row.phases = phases.isEmpty ? nil : phases
+                note("phases", !phases.isEmpty, phases.isEmpty ? "\(file ?? "") has no lines matching the list rule"
+                    : "\(file ?? "") → " + phases.map { "\($0.name) \(Self.mark($0.status))" }.joined(separator: " "))
+            } else {
+                note("phases", false, why ?? "not found")
+            }
+        }
+
+        // gates
+        if let rule = spec.gates {
+            let (text, file, why) = read(rule.at, base: base, c)
+            if let text {
+                row.gates = Self.records(text, rule.list).compactMap { r in gate(r, rule, base: base, c) }
+                note("gates", true, row.gates.isEmpty ? "\(file ?? "") → none open"
+                    : "\(file ?? "") → " + row.gates.map { "\($0.gate) \($0.status)" }.joined(separator: ", "))
+            } else {
+                note("gates", false, why ?? "not found")
+            }
+        }
+
+        // tasks
+        if let at = spec.tasks {
+            let (text, file, why) = read(at, base: base, c)
+            if let text {
+                let boxes = Self.checkboxes(text)
+                row.tasks = boxes.isEmpty ? nil : TaskCount(done: boxes.filter(\.done).count, total: boxes.count)
+                note("tasks", !boxes.isEmpty, boxes.isEmpty ? "\(file ?? "") has no checkboxes" : "\(file ?? "") → \(row.tasks!.done)/\(row.tasks!.total)")
+            } else {
+                note("tasks", false, why ?? "not found")
+            }
+        }
+        return (row, notes)
+    }
+
+    private func gate(_ r: [String: String], _ rule: WorkflowSpec.GateRule, base: String, _ c: Candidate) -> GateInfo? {
+        guard let name = (r["gate"] ?? r["name"]).map(WorkflowSpec.gateKey), !name.isEmpty else { return nil }
+        let raw = (r["status"] ?? (r["done"].map { Self.isDone($0) ? "approved" : "waiting" } ?? "waiting")).lowercased()
+        let status = raw.contains("wait") || raw.contains("open") || raw.contains("pending") ? "waiting"
+            : raw.contains("approv") || raw.contains("pass") || raw.contains("done") ? "approved" : raw
+        var info = GateInfo(
+            gate: name, status: status,
+            at: r["at"].flatMap { LooseDate.parse($0.replacingOccurrences(of: "since ", with: "")) },
+            phase: rule.phase[name])
+        if status == "waiting" {
+            if let a = rule.artefact[name] ?? rule.artefactTemplate.map({ Self.fill($0, c, gate: name) }),
+                let wt = c.worktree
+            {
+                let path = (wt as NSString).appendingPathComponent((base as NSString).appendingPathComponent(a))
+                if FileManager.default.fileExists(atPath: path) { info.artefact = path }
+            }
+            info.approve = rule.approve.map { Self.fill($0, c, gate: name) }
+        }
+        return info
+    }
+
+    // MARK: reading
+
+    /// Text at a locator for a build: (text, the file used, why not).
+    func read(_ at: WorkflowSpec.Locator, base: String, _ c: Candidate) -> (String?, String?, String?) {
+        for file in at.files {
+            let rel = (base as NSString).appendingPathComponent(Self.fill(file, c, gate: nil))
+            guard let text = readFile(rel, c) else { continue }
+            guard let section = at.section else { return (text, rel, nil) }
+            if let body = Self.section(text, section) { return (body, "\(rel) § \(section)", nil) }
+            return (nil, rel, "\(rel) has no \"\(section)\" section")
+        }
+        let tried = at.files.map { (base as NSString).appendingPathComponent(Self.fill($0, c, gate: nil)) }
+        return (nil, nil, "not found: \(tried.joined(separator: ", "))")
+    }
+
+    func readFile(_ rel: String, _ c: Candidate) -> String? {
+        if let wt = c.worktree {
+            let path = (wt as NSString).appendingPathComponent(rel)
+            let real = (path as NSString).resolvingSymlinksInPath
+            guard PathMatch.contains(wt, real) || PathMatch.contains(repo, real),
+                let attrs = try? FileManager.default.attributesOfItem(atPath: real),
+                attrs[.type] as? FileAttributeType == .typeRegular,
+                (attrs[.size] as? Int ?? 0) <= Self.maxFile
+            else { return nil }
+            return try? String(contentsOfFile: real, encoding: .utf8)
+        }
+        return git.show(c.ref, rel)
+    }
+
+    /// Resolves a folder template whose last part may contain `*` (e.g. `{num}_*`).
+    func resolveFolder(_ template: String, _ c: Candidate) -> String? {
+        let parent = (template as NSString).deletingLastPathComponent
+        let last = (template as NSString).lastPathComponent
+        guard last.contains("*") else { return readable(template, c) ? template : nil }
+        let regex = "^" + NSRegularExpression.escapedPattern(for: last).replacingOccurrences(of: "\\*", with: ".*") + "$"
+        let names: [String]
+        if let wt = c.worktree {
+            names = (try? FileManager.default.contentsOfDirectory(atPath: (wt as NSString).appendingPathComponent(parent))) ?? []
+        } else {
+            names = git.list(c.ref, parent)
+        }
+        return names.sorted().first { Self.matches(regex, $0) }.map { (parent as NSString).appendingPathComponent($0) }
+    }
+
+    private func folderFor(_ c: Candidate, pattern: String) -> String? {
+        let dir = (pattern as NSString).deletingLastPathComponent
+        guard let re = Self.templateRegex((pattern as NSString).lastPathComponent) else { return nil }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: (repo as NSString).appendingPathComponent(dir))) ?? []
+        return names.first { name in
+            guard let g = Self.groups(re, name) else { return false }
+            return (g["num"] ?? name) == c.num && (g["slug"] ?? name) == c.slug
+        }.map { (dir as NSString).appendingPathComponent($0) }
+    }
+
+    private func readable(_ rel: String, _ c: Candidate) -> Bool {
+        if let wt = c.worktree {
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: (wt as NSString).appendingPathComponent(rel), isDirectory: &isDir)
+        }
+        return git.run(["cat-file", "-e", "\(c.ref):\(rel)"]) != nil
+    }
+
+    // MARK: pure helpers (tested directly)
+
+    /// `build/{num}-{slug}` → a regex with named groups.
+    static func templateRegex(_ template: String) -> NSRegularExpression? {
+        var out = "^"
+        var rest = Substring(template)
+        while let open = rest.firstIndex(of: "{"), let close = rest[open...].firstIndex(of: "}") {
+            out += NSRegularExpression.escapedPattern(for: String(rest[..<open])).replacingOccurrences(of: "\\*", with: ".*")
+            let name = rest[rest.index(after: open)..<close]
+            out += name == "num" ? "(?<num>[^/]+?)" : name == "slug" ? "(?<slug>.+)" : ".+?"
+            rest = rest[rest.index(after: close)...]
+        }
+        out += NSRegularExpression.escapedPattern(for: String(rest)).replacingOccurrences(of: "\\*", with: ".*") + "$"
+        return try? NSRegularExpression(pattern: out)
+    }
+
+    static func groups(_ re: NSRegularExpression, _ s: String) -> [String: String]? {
+        let ns = s as NSString
+        guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        var out: [String: String] = [:]
+        for name in ["num", "slug"] {
+            let r = m.range(withName: name)
+            if r.location != NSNotFound { out[name] = ns.substring(with: r) }
+        }
+        return out
+    }
+
+    static func fill(_ template: String, _ c: Candidate, gate: String?) -> String {
+        var s = template.replacingOccurrences(of: "{num}", with: c.num)
+            .replacingOccurrences(of: "{slug}", with: c.slug)
+            .replacingOccurrences(of: "{branch}", with: c.branch)
+        if let gate { s = s.replacingOccurrences(of: "{gate}", with: gate) }
+        return s
+    }
+
+    static func matches(_ pattern: String, _ s: String) -> Bool {
+        (try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]))?
+            .firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
+    }
+
+    /// The body under a markdown heading named `heading`, up to the next heading of the same
+    /// or a higher level.
+    public static func section(_ text: String, _ heading: String) -> String? {
+        let lines = text.components(separatedBy: "\n")
+        let want = heading.lowercased().trimmingCharacters(in: .whitespaces)
+        func level(_ l: String) -> Int? {
+            let hashes = l.prefix { $0 == "#" }.count
+            return hashes > 0 && hashes <= 6 && l.dropFirst(hashes).first == " " ? hashes : nil
+        }
+        guard let start = lines.firstIndex(where: { l in
+            level(l) != nil && l.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix(want)
+        }), let lvl = level(lines[start]) else { return nil }
+        var body: [String] = []
+        for l in lines[(start + 1)...] {
+            if let n = level(l), n <= lvl { break }
+            body.append(l)
+        }
+        return body.joined(separator: "\n")
+    }
+
+    static func extract(_ text: String, pick: WorkflowSpec.Pick?, match: String?, group: String) -> String? {
+        if let match, let re = try? NSRegularExpression(pattern: match, options: [.anchorsMatchLines]) {
+            let ns = text as NSString
+            guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+            let named = m.range(withName: group)
+            if named.location != NSNotFound { return ns.substring(with: named) }
+            if m.numberOfRanges > 1, m.range(at: 1).location != NSNotFound { return ns.substring(with: m.range(at: 1)) }
+            return ns.substring(with: m.range)
+        }
+        let lines = text.components(separatedBy: "\n")
+        switch pick ?? .firstLine {
+        case .firstQuote:
+            var quote: [String] = []
+            for l in lines {
+                if l.hasPrefix(">") { quote.append(String(l.dropFirst()).trimmingCharacters(in: .whitespaces)) }
+                else if !quote.isEmpty { break }
+            }
+            return quote.isEmpty ? nil : quote.joined(separator: " ")
+        case .firstLine:
+            return lines.map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("<!--") }
+        }
+    }
+
+    static func plain(_ s: String) -> String {
+        s.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    static func checkboxes(_ text: String) -> [(done: Bool, text: String)] {
+        text.components(separatedBy: "\n").compactMap { line in
+            let l = line.trimmingCharacters(in: .whitespaces)
+            for (prefix, done) in [("- [ ] ", false), ("- [x] ", true), ("- [X] ", true), ("* [ ] ", false), ("* [x] ", true)]
+            where l.hasPrefix(prefix) {
+                return (done, String(l.dropFirst(prefix.count)))
+            }
+            return nil
+        }
+    }
+
+    static func records(_ text: String, _ kind: WorkflowSpec.ListKind) -> [[String: String]] {
+        switch kind {
+        case .checkboxes:
+            return checkboxes(text).map { ["done": $0.done ? "x" : " ", "name": $0.text, "gate": $0.text] }
+        case .regex(let pattern):
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return [] }
+            let names = groupNames(pattern)
+            return text.components(separatedBy: "\n").compactMap { line in
+                let ns = line as NSString
+                guard let m = re.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else { return nil }
+                var r: [String: String] = [:]
+                for n in names {
+                    let range = m.range(withName: n)
+                    if range.location != NSNotFound { r[n] = ns.substring(with: range) }
+                }
+                return r
+            }
+        }
+    }
+
+    static func groupNames(_ pattern: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: "\\(\\?<([A-Za-z][A-Za-z0-9]*)>") else { return [] }
+        let ns = pattern as NSString
+        return re.matches(in: pattern, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) }
+    }
+
+    static func isDone(_ s: String) -> Bool { ["x", "X", "true", "done", "yes"].contains(s.trimmingCharacters(in: .whitespaces)) }
+
+    static func phases(_ text: String, _ kind: WorkflowSpec.ListKind) -> [PhaseInfo] {
+        let rows = records(text, kind)
+        let tracksStart: Bool = {
+            if case .regex(let p) = kind { return groupNames(p).contains("started") }
+            return false
+        }()
+        var firstOpenSeen = false
+        return rows.enumerated().map { i, r in
+            let done = r["done"].map(isDone) ?? false
+            let started = r["started"].flatMap(LooseDate.parse)
+            var status = done ? "done" : "pending"
+            if !done {
+                if tracksStart {
+                    if started != nil { status = "active" }
+                } else if !firstOpenSeen {
+                    status = "active"
+                }
+                firstOpenSeen = true
+            }
+            return PhaseInfo(
+                n: r["n"].flatMap(Int.init) ?? i + 1,
+                name: (r["name"] ?? "Phase \(i + 1)").trimmingCharacters(in: .whitespaces),
+                status: status, startedAt: started, doneAt: r["doneAt"].flatMap(LooseDate.parse))
+        }
+    }
+
+    static func mark(_ status: String) -> String { status == "done" ? "✓" : status == "active" ? "◐" : "○" }
+}

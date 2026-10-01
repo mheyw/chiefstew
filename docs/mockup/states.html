@@ -1,0 +1,237 @@
+<!doctype html>
+<!-- Chief Stew v1 mockup (M0). Static; for approval before feature code. Render: see docs/mockup/README.md -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Chief Stew — states mockup</title>
+<style>
+  :root { --orange:#e8750a; --red:#d93a2f; --green:#2e9d4f; --blue:#0a66d8; --sec:#6e6e73; --ter:#a1a1a6; --sep:rgba(0,0,0,.09); }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 32px 36px; font:13px/1.35 -apple-system, "SF Pro Text", system-ui, sans-serif; color:#1d1d1f;
+         background:linear-gradient(160deg,#c9d6e8 0%,#dfd3e6 55%,#e9dccd 100%); width:1000px; }
+  h1 { font-size:20px; margin:0 0 2px; } .sub { color:#3a3a3c; margin:0 0 18px; font-size:12.5px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:#3a3a3c; margin:0 0 8px; }
+
+  /* menu bar strip */
+  .bars { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px 20px; margin-bottom:26px; }
+  .barrow { display:flex; align-items:center; gap:10px; }
+  .barlabel { width:92px; font-size:11.5px; font-weight:600; color:#3a3a3c; text-align:right; }
+  .menubar { flex:1; height:26px; background:rgba(246,246,246,.78); backdrop-filter:blur(20px); border-radius:6px;
+             display:flex; align-items:center; justify-content:flex-end; padding:0 10px; gap:14px; font-size:13px;
+             box-shadow:0 0 0 .5px rgba(0,0,0,.12); }
+  .menubar .other { color:#3a3a3c; opacity:.55; }
+  .item { display:flex; align-items:center; gap:5px; padding:1px 7px; border-radius:4px; font-weight:500; white-space:nowrap; }
+  .item.hi { background:rgba(0,0,0,.1); }
+  .item .num { font-variant-numeric:tabular-nums; }
+  .ferry { width:17px; height:17px; position:relative; display:inline-block; }
+  .ferry svg { width:17px; height:17px; }
+  .badge { position:absolute; right:-2px; top:-1px; width:7px; height:7px; border-radius:50%; background:var(--orange);
+           box-shadow:0 0 0 1.5px rgba(246,246,246,.95); }
+  .attn { color:var(--orange); font-weight:600; }
+
+  /* panels */
+  .grid { display:grid; grid-template-columns:repeat(2, 452px); gap:26px 32px; }
+  .state h2 span { text-transform:none; letter-spacing:0; font-weight:400; color:#48484a; }
+  .panel { width:452px; background:rgba(250,250,250,.94); backdrop-filter:blur(30px); border-radius:11px;
+           box-shadow:0 0 0 .5px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.22); padding:12px 0 0; overflow:hidden; }
+  .phead { display:flex; justify-content:space-between; align-items:baseline; padding:0 16px 9px; border-bottom:1px solid var(--sep); }
+  .phead b { font-size:13.5px; } .phead span { color:var(--sec); font-size:12px; }
+  .sect { padding:9px 16px 4px; }
+  .sect + .sect { border-top:1px solid var(--sep); }
+  .stitle { font-size:11px; font-weight:600; color:var(--sec); letter-spacing:.04em; text-transform:uppercase; margin-bottom:6px;
+            display:flex; justify-content:space-between; }
+  .stitle.o { color:var(--orange); }
+  .row { padding:5px 0 8px; }
+  .row + .row { border-top:1px dashed rgba(0,0,0,.07); padding-top:8px; }
+  .l1 { display:flex; align-items:center; gap:7px; }
+  .l1 .dot { width:8px; height:8px; border-radius:50%; flex:none; }
+  .l1 .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .l1 .n { font-variant-numeric:tabular-nums; }
+  .l1 .right { margin-left:auto; color:var(--sec); font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .l2 { color:#3a3a3c; margin:3px 0 0 15px; font-size:12.5px; }
+  .l3 { color:var(--sec); margin:2px 0 0 15px; font-size:12px; }
+  .q { font-style:italic; }
+  .acts { margin:7px 0 0 15px; display:flex; flex-wrap:wrap; gap:6px; }
+  .btn { font-size:12px; padding:2px 9px; border-radius:5px; background:#fff; box-shadow:0 0 0 .5px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.06); white-space:nowrap; }
+  .btn.p { background:var(--blue); color:#fff; box-shadow:none; }
+  .phases { display:inline-flex; gap:3px; vertical-align:middle; margin-right:6px; }
+  .phases i { width:7px; height:7px; border-radius:50%; display:inline-block; border:1.2px solid #8e8e93; }
+  .phases i.d { background:#636366; border-color:#636366; }
+  .phases i.a { background:linear-gradient(90deg,#636366 50%,transparent 50%); border-color:#636366; }
+  .phases i.w { background:var(--orange); border-color:var(--orange); }
+  .bar { height:4px; background:rgba(0,0,0,.08); border-radius:2px; width:90px; display:inline-block; vertical-align:middle; margin-left:6px; overflow:hidden; }
+  .bar b { display:block; height:100%; background:var(--green); }
+  .tag { font-size:10.5px; padding:0 5px; border-radius:3px; background:rgba(0,0,0,.06); color:#48484a; margin-left:2px; font-weight:500; }
+  .tag.fast { background:#e6f0fd; color:var(--blue); }
+  .warn { color:var(--orange); }
+  .empty { padding:22px 16px 20px; text-align:center; color:var(--sec); }
+  .empty .big { font-size:14px; color:#3a3a3c; margin-bottom:3px; }
+  .foot { display:flex; gap:16px; padding:8px 16px 9px; border-top:1px solid var(--sep); background:rgba(0,0,0,.025); color:#3a3a3c; font-size:12.5px; }
+  .foot .q2 { margin-left:auto; }
+  .foot .muted { color:var(--sec); }
+  .mono { font:11.5px ui-monospace, "SF Mono", Menlo, monospace; }
+  .notes { margin-top:26px; background:rgba(255,255,255,.7); border-radius:10px; padding:12px 18px; font-size:12.5px; }
+  .notes li { margin:3px 0; }
+  .notif { width:452px; margin-top:12px; background:rgba(250,250,250,.94); border-radius:14px; padding:10px 12px; display:flex; gap:10px;
+           box-shadow:0 0 0 .5px rgba(0,0,0,.15), 0 8px 20px rgba(0,0,0,.18); }
+  .notif .ic { width:32px; height:32px; border-radius:8px; background:#1d3557; flex:none; display:flex; align-items:center; justify-content:center; }
+  .notif .ic svg { width:20px; height:20px; }
+  .notif b { font-size:13px; } .notif .t { font-size:12.5px; color:#3a3a3c; } .notif .ts { margin-left:auto; color:var(--sec); font-size:11.5px; }
+</style>
+</head>
+<body>
+<svg style="display:none">
+  <symbol id="ferry" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 15.5 5 19h14l2-3.5z"/><path d="M6 15.5V11h12v4.5"/><path d="M9 11V8h6v3"/><path d="M12 8V5"/>
+    <path d="M2.5 21.5c1.5 0 1.5-.8 3-.8s1.5.8 3 .8 1.5-.8 3-.8 1.5.8 3 .8 1.5-.8 3-.8 1.5.8 3 .8"/></g></symbol>
+</svg>
+
+<h1>Chief Stew — v1 states</h1>
+<p class="sub">Mockup for approval (M0). Illustrative data. Icon is SF Symbol <span class="mono">ferry</span> (there is no anchor symbol; a custom anchor template image is possible). Panel is a 452 pt <span class="mono">MenuBarExtra(.window)</span>.</p>
+
+<h2>Menu-bar item</h2>
+<div class="bars">
+  <div class="barrow"><div class="barlabel">Idle</div><div class="menubar"><span class="other">⌁ 􀙇</span>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">In progress</div><div class="menubar"><span class="other">⌁ 􀙇</span>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span class="num">173 Implement 6/11</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">In progress, 2+</div><div class="menubar"><span class="other">⌁ 􀙇</span>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span class="num">173 Implement 6/11 <span style="color:var(--sec)">+1</span></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">Needs you</div><div class="menubar"><span class="other">⌁ 􀙇</span>
+    <span class="item"><span class="ferry attn"><svg><use href="#ferry"/></svg><span class="badge"></span></span><span class="num attn">174 Plan gate</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">Needs you, 2+</div><div class="menubar"><span class="other">⌁ 􀙇</span>
+    <span class="item"><span class="ferry attn"><svg><use href="#ferry"/></svg><span class="badge"></span></span><span class="num attn">2 need you</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">Left behind</div><div class="menubar"><span class="other">⌁ 􀙇</span>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span style="color:var(--sec);font-size:11px">⚠</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+</div>
+
+<div class="grid">
+
+<!-- IDLE -->
+<div class="state"><h2>1 · Idle <span>— nothing in flight</span></h2>
+<div class="panel">
+  <div class="phead"><b>Chief Stew</b><span>Nothing in flight</span></div>
+  <div class="empty"><div class="big">All quiet.</div>No builds in flight in <b>my-app</b>.<br>Checked 12 s ago.</div>
+  <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="q2">Quit</span></div>
+</div></div>
+
+<!-- IN PROGRESS -->
+<div class="state"><h2>2 · In progress <span>— builds running, nothing waiting on you</span></h2>
+<div class="panel">
+  <div class="phead"><b>Chief Stew</b><span>2 builds</span></div>
+  <div class="sect"><div class="stitle">In progress</div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--green)"></span><span class="name"><span class="n">173</span> search_index</span><span class="right">1h 42m</span></div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 6/11 tasks<span class="bar"><b style="width:55%"></b></span></div>
+      <div class="l3">full lane · Claude active 3 min ago · 4 behind main</div>
+      <div class="acts"><span class="btn">Open progress</span><span class="btn">Open worktree</span><span class="btn">Open app ↗</span></div>
+    </div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--green)"></span><span class="name"><span class="n">175</span> copy_review</span><span class="tag fast">fast</span><span class="right">24m</span></div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 1/4 tasks<span class="bar"><b style="width:25%"></b></span></div>
+      <div class="l3">fast lane · Claude idle 9 min</div>
+      <div class="acts"><span class="btn">Open progress</span><span class="btn">Open worktree</span></div>
+    </div>
+  </div>
+  <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="muted">checked 12 s ago</span><span class="q2">Quit</span></div>
+</div></div>
+
+<!-- NEEDS YOU -->
+<div class="state"><h2>3 · Needs you <span>— a gate, an agent question, an unmerged close</span></h2>
+<div class="panel">
+  <div class="phead"><b>Chief Stew</b><span>3 builds · <span class="attn">3 need you</span></span></div>
+  <div class="sect"><div class="stitle o">Needs you</div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--orange)"></span><span class="name"><span class="n">174</span> checkout_flow</span><span class="right warn">Plan gate · 12 min</span></div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="w"></i><i></i><i></i><i></i></span>Plan ready — waiting on your sign-off</div>
+      <div class="acts"><span class="btn p">Open plan.md</span><span class="btn">Open worktree</span><span class="btn">Copy approve command</span></div>
+    </div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--orange)"></span><span class="name"><span class="n">173</span> search_index</span><span class="right warn">Claude · 2 min</span></div>
+      <div class="l2 q">“Claude needs your permission to use Bash”</div>
+      <div class="acts"><span class="btn p">Open worktree</span></div>
+    </div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--orange)"></span><span class="name"><span class="n">172</span> bulk_actions</span><span class="right warn">Closed 2 d · not merged</span></div>
+      <div class="l2">Closed 2026-09-28 — merge to main today, then <span class="mono">record-merge</span></div>
+      <div class="acts"><span class="btn">Open worktree</span><span class="btn">Copy record-merge command</span></div>
+    </div>
+  </div>
+  <div class="sect"><div class="stitle">In progress</div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--green)"></span><span class="name"><span class="n">175</span> copy_review</span><span class="tag fast">fast</span><span class="right">24m</span></div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 1/4 tasks<span class="bar"><b style="width:25%"></b></span></div>
+    </div>
+  </div>
+  <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="muted">checked 12 s ago</span><span class="q2">Quit</span></div>
+</div>
+<div class="notif"><div class="ic" style="color:#fff"><svg><use href="#ferry"/></svg></div>
+  <div><div style="display:flex"><b>174 needs you</b></div><div class="t">Plan gate — checkout_flow</div></div><span class="ts">now</span></div>
+</div>
+
+<!-- LEFT BEHIND -->
+<div class="state"><h2>4 · Left behind <span>— sweep findings; show only, you run cleanup</span></h2>
+<div class="panel">
+  <div class="phead"><b>Chief Stew</b><span>1 build · 4 left behind</span></div>
+  <div class="sect"><div class="stitle">In progress</div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--green)"></span><span class="name"><span class="n">173</span> search_index</span><span class="right">1h 42m</span></div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 6/11 tasks<span class="bar"><b style="width:55%"></b></span></div>
+    </div>
+  </div>
+  <div class="sect"><div class="stitle"><span>Left behind</span><span style="text-transform:none;letter-spacing:0;font-weight:400">swept 6 min ago</span></div>
+    <div class="row">
+      <div class="l1"><span class="warn">⚠</span><span class="name">1 leaked database</span></div>
+      <div class="l3 mono">myapp_wt_fix_b</div>
+      <div class="acts"><span class="btn">Copy: make clean-dbs</span></div>
+    </div>
+    <div class="row">
+      <div class="l1"><span class="warn">⚠</span><span class="name">2 processes in deleted folders</span></div>
+      <div class="l3 mono">pid 67816 · .claude/worktrees/129 (gone)<br>pid 67818 · .claude/worktrees/129 (gone)</div>
+      <div class="acts"><span class="btn">Copy: kill 67816 67818</span></div>
+    </div>
+    <div class="row">
+      <div class="l1"><span class="warn">⚠</span><span class="name">1 stray portless route</span></div>
+      <div class="l3 mono">fix-b.api.my-app.localhost — process 5512 is gone</div>
+      <div class="acts"><span class="btn">Copy: portless prune</span></div>
+    </div>
+  </div>
+  <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="muted">checked 12 s ago</span><span class="q2">Quit</span></div>
+</div></div>
+
+<!-- ERROR / STALE -->
+<div class="state"><h2>5 · Can't read a repo <span>— last good data kept, marked stale</span></h2>
+<div class="panel">
+  <div class="phead"><b>Chief Stew</b><span>1 build · <span style="color:var(--red)">1 repo stale</span></span></div>
+  <div class="sect"><div class="stitle" style="color:var(--red)">Problem</div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:var(--red)"></span><span class="name">my-app — status failed</span><span class="right">since 14:01</span></div>
+      <div class="l3 mono">node scripts/status.mjs: exit 1 · “not a git repository”</div>
+      <div class="acts"><span class="btn">Retry</span><span class="btn">Repos…</span><span class="btn">Copy error</span></div>
+    </div>
+  </div>
+  <div class="sect" style="opacity:.55"><div class="stitle">In progress · as of 13:59</div>
+    <div class="row">
+      <div class="l1"><span class="dot" style="background:#8e8e93"></span><span class="name"><span class="n">173</span> search_index</span><span class="right">1h 39m</span></div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 6/11 tasks</div>
+    </div>
+  </div>
+  <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="q2">Quit</span></div>
+</div></div>
+
+<!-- NOTES -->
+<div class="state"><h2>Decisions shown here <span>— approve or change</span></h2>
+<div class="notes" style="margin-top:0">
+<ol style="margin:0;padding-left:18px">
+  <li><b>Menu-bar text is short</b> (≤ ~20 chars): number, phase, tasks. The 7 dots live in the panel; at menu-bar size they're unreadable and a notched MacBook hides items that don't fit.</li>
+  <li><b>Most relevant build:</b> needs-you first (oldest waiting), else most recent activity. <span class="mono">+1</span> when more builds are in flight. No pinning in v1.</li>
+  <li><b>Needs you</b> = a waiting gate, an agent asking for input, or <i>closed but not merged</i>. Colour: orange icon, badge and text.</li>
+  <li><b>Left behind never takes over the menu bar</b>: just a small ⚠ beside the icon. It isn't urgent.</li>
+  <li><b>Fast-lane builds show 4 dots</b> (Phases 1, 5, 6, 7); full lane shows 7. The waiting gate's dot is orange.</li>
+  <li><b>Cleanup is copy-only.</b> Chief Stew never runs it.</li>
+  <li><b>Notifications only for needs-you</b>; a reminder every 30 min while a gate waits (configurable). Never for progress.</li>
+</ol></div></div>
+
+</div>
+</body>
+</html>

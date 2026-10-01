@@ -1,0 +1,11 @@
+{
+  "v": 1, "generatedAt": "2026-09-30T14:05:00Z", "repo": "/Users/you/my-app",
+  "databases": { "checked": true, "claimed": 2, "leaked": ["myapp_wt_fix_b"] },
+  "routes": [ { "hostname": "fix-b.api.my-app.localhost", "port": 4012, "pid": 5512, "reason": "process 5512 is gone" } ],
+  "processes": [
+    { "pid": 67816, "cwd": "/Users/you/my-app/.claude/worktrees/129", "command": "node server.js" },
+    { "pid": 67818, "cwd": "/Users/you/my-app/.claude/worktrees/129", "command": "node server.js" }
+  ],
+  "cleanup": ["make clean-dbs", "portless prune"],
+  "errors": []
+}

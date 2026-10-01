@@ -1,0 +1,1 @@
+{ "v": 1, "status": ["node", "scripts/status.mjs", "status"], "sweep": ["node", "scripts/status.mjs", "sweep"] }

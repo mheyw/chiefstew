@@ -1,0 +1,669 @@
+import AppKit
+import ChiefStewCore
+import ChiefStewUI
+import Observation
+import os
+import SwiftUI
+
+/// Owns the live state: polls each repo's status and sweep, drains the inbox, posts
+/// notifications, and hands the views a `Board`. What to show and what to notify are decided
+/// by ChiefStewCore's `Board.make` and `NotificationPlanner`.
+@MainActor @Observable
+final class AppModel {
+    static let statusInterval: Duration = .seconds(60)
+    static let sweepInterval: Duration = .seconds(15 * 60)
+    static let eventDebounce: Duration = .seconds(2)
+    static let panelFreshness: TimeInterval = 10
+
+    private(set) var snapshots: [String: RepoSnapshot] = [:]
+    private(set) var tracker = AgentTracker()
+    private(set) var repos: [String]
+    /// Bumped by the poll loop so time-based state (needs-input expiry) re-evaluates.
+    private(set) var tick = Date()
+    private(set) var permission: Notifier.Permission = .unknown
+    private(set) var login: LoginEnvironment?
+    private(set) var loginError: String?
+    var settingsTab: SettingsTab = .repos
+    private(set) var update: UpdateBanner?
+
+    var settings: Preferences {
+        didSet {
+            guard settings != oldValue else { return }
+            Self.save(settings, key: "settings")
+            if settings.nodePath != oldValue.nodePath {
+                login = nil
+                Task { await refreshAll() }
+            }
+            updateNotifications()
+        }
+    }
+
+    /// `$CHIEFSTEW_REPOS` is set: the repo list is fixed for this run and not saved.
+    let reposOverridden = ProcessInfo.processInfo.environment["CHIEFSTEW_REPOS"] != nil
+
+    @ObservationIgnored private let paths = Paths()
+    @ObservationIgnored private let notifier = Notifier()
+    @ObservationIgnored private var ledger: NoticeLedger
+    @ObservationIgnored private var watcher: InboxWatcher?
+    @ObservationIgnored private var inflight = Set<String>()
+    @ObservationIgnored private var rerun = Set<String>()
+    @ObservationIgnored private var sweeping = Set<String>()
+    @ObservationIgnored private var pending: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var loops: [Task<Void, Never>] = []
+    @ObservationIgnored private let log = Logger(subsystem: "com.mheyw.chiefstew", category: "app")
+    @ObservationIgnored private var lastUpdateCheck = Date.distantPast
+    @ObservationIgnored private var updateLatest: String?
+
+    static let updateCheckInterval: TimeInterval = 5 * 60
+    static let updateNoticeID = "chiefstew-update"
+    static let updateLog = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/Chief Stew/update.log").path
+
+    init() {
+        repos = RepoStore.load()
+        settings = Self.load(Preferences.self, key: "settings") ?? Preferences()
+        ledger = Self.load(NoticeLedger.self, key: "noticeLedger") ?? NoticeLedger()
+        // Agent waits survive a relaunch (and a one-click update): the events that set them
+        // were deleted from the inbox long ago (review: relaunch-drops-agent-waits).
+        if let data = try? Data(contentsOf: paths.agents),
+            let saved = try? JSONDecoder().decode(AgentTracker.self, from: data)
+        {
+            tracker = saved
+            tracker.prune(now: Date())
+        }
+    }
+
+    private func saveAgents() {
+        if let data = try? JSONEncoder().encode(tracker) {
+            try? data.write(to: paths.agents, options: .atomic)
+        }
+        writeWaitingMarkers()
+    }
+
+    /// `waiting/<session>` exists while that session needs input, so the PostToolUse
+    /// hook can skip starting Node for every tool call unless something is waiting
+    /// (contract § 1). Session IDs are reduced to safe filename characters.
+    private func writeWaitingMarkers() {
+        let fm = FileManager.default
+        let dir = paths.waiting
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let want = Set(
+            tracker.current(now: Date()).filter { $0.needsInput != nil }.map { Paths.markerName($0.session) })
+        let have = Set((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
+        for name in have.subtracting(want) { try? fm.removeItem(at: dir.appendingPathComponent(name)) }
+        for name in want.subtracting(have) {
+            fm.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data())
+        }
+    }
+
+    func board(now: Date) -> Board {
+        Board.make(
+            repos: repos.map { snapshots[$0] ?? RepoSnapshot(path: $0) },
+            agents: tracker.current(now: now), now: now)
+    }
+
+    // MARK: lifecycle
+
+    func start() {
+        guard loops.isEmpty else { return }
+        log.info("starting; repos: \(self.repos.joined(separator: ", "), privacy: .public)")
+        // Creating the inbox marks Chief Stew as installed, so emitters start writing events.
+        try? FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
+        let watcher = InboxWatcher(dir: paths.inbox) { [weak self] in
+            Task { @MainActor in self?.drainInbox() }
+        }
+        watcher.ensureRunning()
+        self.watcher = watcher
+        drainInbox()
+
+        notifier.onClick = { [weak self] id, target in
+            guard let self else { return }
+            if id == Self.updateNoticeID {
+                if case .available = self.update { self.installUpdate() }
+                if case .failed = self.update { self.installUpdate() }
+            } else if let target {
+                self.open(target)
+            }
+        }
+        notifier.onPermissionChange = { [weak self] permission in
+            self?.permission = permission
+            self?.heartbeat()
+            self?.updateNotifications()
+        }
+
+        writeWaitingMarkers()
+        // Housekeeping runs on its own loop, so a slow or stuck status call can never stop
+        // the heartbeat (review: concurrency-1).
+        loops.append(
+            Task { [weak self] in
+                await self?.notifier.requestPermission()
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    self.tick = Date()
+                    self.tracker.prune(now: self.tick)
+                    self.watcher?.ensureRunning()
+                    await self.notifier.refreshPermission()  // it can change in System Settings
+                    self.heartbeat()
+                    self.drainInbox()
+                    self.writeWaitingMarkers()
+                    self.updateNotifications()
+                    self.checkUpdateWatchdog()
+                    try? await Task.sleep(for: Self.statusInterval)
+                }
+            })
+        loops.append(
+            Task { [weak self] in
+                while !Task.isCancelled {
+                    await self?.refreshAll()
+                    await self?.checkForUpdate()
+                    try? await Task.sleep(for: Self.statusInterval)
+                }
+            })
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.log.info("woke from sleep; refreshing")
+                self?.login = nil  // PATH or node may have changed
+                self?.heartbeat()
+                await self?.refreshAll()
+                await self?.sweepAll()
+            }
+        }
+    }
+
+    /// On quit: drop the heartbeat so emitters go back to their own notifications at once.
+    func stop() {
+        try? FileManager.default.removeItem(at: paths.heartbeat)
+    }
+
+    func panelOpened() {
+        let now = Date()
+        let stale = repos.contains { repo in
+            guard let at = snapshots[repo]?.statusAt else { return true }
+            return now.timeIntervalSince(at) > Self.panelFreshness
+        }
+        tick = now
+        if stale { Task { await refreshAll() } }
+        Task { await checkForUpdate(force: true) }
+    }
+
+    // MARK: updates
+
+    /// Set by build.sh: the source folder and the commit this copy was built from. Only the
+    /// installed copy offers updates; a dev run from build/ doesn't.
+    private var source: (dir: String, commit: String)? {
+        let info = Bundle.main.infoDictionary ?? [:]
+        guard LaunchAtLogin.isInstalled,
+            let dir = info["ChiefStewSourceDir"] as? String,
+            let commit = info["ChiefStewSourceCommit"] as? String, commit != "unknown"
+        else { return nil }
+        return (dir, commit)
+    }
+
+    func checkForUpdate(force: Bool = false) async {
+        guard let source, update != .installing else { return }
+        let now = Date()
+        guard force ? now.timeIntervalSince(lastUpdateCheck) > 30
+            : now.timeIntervalSince(lastUpdateCheck) > Self.updateCheckInterval
+        else { return }
+        lastUpdateCheck = now
+        guard let available = await SourceUpdate.check(
+            sourceDir: source.dir, installedCommit: source.commit)
+        else {
+            if case .available = update { update = nil }
+            notifier.withdraw([Self.updateNoticeID])  // an old "update available" is now wrong
+            return
+        }
+        if case .failed = update, available.latest == updateLatest { return }  // same build failed
+        update = .available(newCommits: available.newCommits)
+        updateLatest = available.latest
+        let key = "updateNotifiedFor"
+        if permission == .granted, UserDefaults.standard.string(forKey: key) != available.latest {
+            UserDefaults.standard.set(available.latest, forKey: key)
+            let commits = available.newCommits.map { "\($0) new commit\($0 == 1 ? "" : "s")" }
+            notifier.post(
+                Notice(
+                    id: Self.updateNoticeID, title: "Chief Stew update available",
+                    body: [commits, "Click to build and install it."].compactMap { $0 }
+                        .joined(separator: " · "),
+                    open: nil, isReminder: true))
+        }
+    }
+
+    /// Runs `build.sh install` from the source folder, detached: it quits this copy, swaps in
+    /// the new one and reopens it. If the build fails, this copy is still running and says so.
+    @ObservationIgnored private var installStarted: Date?
+
+    /// A build that never finishes (or a quit that never came) shouldn't leave "Building…"
+    /// forever (review: install-update-no-retry-no-timeout).
+    private func checkUpdateWatchdog() {
+        guard update == .installing, let started = installStarted,
+            Date().timeIntervalSince(started) > 20 * 60
+        else { return }
+        update = .failed(log: Self.updateLog)
+    }
+
+    func installUpdate() {
+        guard let source, update != .installing else { return }
+        let fm = FileManager.default
+        let logURL = URL(fileURLWithPath: Self.updateLog)
+        try? fm.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        fm.createFile(atPath: logURL.path, contents: Data("\(Date()) installing from \(source.dir)\n".utf8))
+        guard let logHandle = try? FileHandle(forWritingTo: logURL) else { return }
+        logHandle.seekToEndOfFile()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        // `update` builds a clean export of main, not whatever is checked out in the source
+        // folder (review: updater-installs-working-tree-not-main).
+        process.arguments = [(source.dir as NSString).appendingPathComponent("build.sh"), "update"]
+        process.currentDirectoryURL = URL(fileURLWithPath: source.dir)
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        process.environment = env
+        process.standardOutput = logHandle
+        process.standardError = logHandle
+        process.standardInput = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] p in
+            let status = p.terminationStatus
+            Task { @MainActor in
+                guard let self else { return }
+                // Still here: on success build.sh would have quit and replaced this copy.
+                self.log.error("update exited \(status) without replacing this copy")
+                self.update = .failed(log: Self.updateLog)
+            }
+        }
+        do {
+            try process.run()
+            update = .installing
+            installStarted = Date()
+            notifier.withdraw([Self.updateNoticeID])
+            log.info("update: build.sh install started (pid \(process.processIdentifier))")
+        } catch {
+            update = .failed(log: Self.updateLog)
+        }
+    }
+
+    // MARK: notifications
+
+    /// While Chief Stew can notify, `alive` stays fresh and emitters hand their notifications
+    /// over (contract § 2.5). Without permission there's no heartbeat, so emitters keep
+    /// notifying and nothing is lost.
+    private func heartbeat() {
+        let file = paths.heartbeat
+        guard permission == .granted else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        let fm = FileManager.default
+        if fm.fileExists(atPath: file.path) {
+            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: file.path)
+        } else {
+            fm.createFile(atPath: file.path, contents: Data())
+        }
+    }
+
+    private func updateNotifications() {
+        guard permission == .granted else { return }
+        let now = Date()
+        let loaded = Set(repos.filter { snapshots[$0]?.statusAt != nil })
+        let plan = NotificationPlanner.plan(
+            board: board(now: now), ledger: ledger, settings: settings, now: now, loaded: loaded)
+        plan.post.forEach(notifier.post)
+        notifier.withdraw(plan.withdraw)
+        if plan.ledger != ledger {
+            ledger = plan.ledger
+            Self.save(ledger, key: "noticeLedger")
+        }
+    }
+
+    // MARK: repo setup (the Add Repo wizard)
+
+    /// The wizard sheet is open.
+    var showAddRepo = false
+    /// Pre-selects a repo in the wizard (from a repo's "Set up…" button).
+    var wizardRepo: String?
+    private(set) var hooksState: ClaudeHooks.State = .notInstalled
+
+    /// The bundled `chiefstew` command (Contents/Helpers/chiefstew); nil in a bare `swift run`.
+    var cliPath: String? {
+        let path = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/chiefstew").path
+        return FileManager.default.isExecutableFile(atPath: path) ? path : nil
+    }
+
+    /// Coding agents on the login PATH, for "Run setup prompt".
+    var agents: [AgentCLI] {
+        AgentLauncher.installed(path: login?.path ?? ProcessInfo.processInfo.environment["PATH"] ?? "")
+    }
+
+    var contract: String? { Self.bundled("event-contract") }
+    var workflowDoc: String? { Self.bundled("workflow") }
+
+    private static func bundled(_ name: String) -> String? {
+        Bundle.main.url(forResource: name, withExtension: "md")
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+    }
+
+    func refreshHooksState() {
+        hooksState = cliPath.map { ClaudeHooks.state(cli: $0) } ?? .notInstalled
+    }
+
+    /// Adds Chief Stew's Claude Code hooks to ~/.claude/settings.json (backed up first).
+    func installHooks() -> String? {
+        guard let cli = cliPath else { return "This copy has no bundled chiefstew command; install the app with ./build.sh install." }
+        do {
+            try ClaudeHooks.install(cli: cli)
+            refreshHooksState()
+            return nil
+        } catch {
+            return String(describing: error)
+        }
+    }
+
+    func removeHooks() -> String? {
+        do {
+            try ClaudeHooks.uninstall()
+            refreshHooksState()
+            return nil
+        } catch {
+            return String(describing: error)
+        }
+    }
+
+    /// Runs a repo's status command once, for the wizard: a one-line result or the error.
+    func testStatus(_ repo: String) async -> (ok: Bool, text: String) {
+        guard case .success(let client) = await client() else {
+            return (false, loginError ?? "couldn't find node")
+        }
+        switch await client.status(repo: repo) {
+        case .success(nil): return (true, "No status command: this repo's agents only.")
+        case .success(let report?):
+            let n = report.builds.count
+            return (true, "Read \(n) build\(n == 1 ? "" : "s") in flight.")
+        case .failure(let e): return (false, e.description + (e.hint.map { "\n\($0)" } ?? ""))
+        }
+    }
+
+    func setupPrompt(for repo: String, problem: String?) -> String {
+        let config = (try? RepoConfig.load(repo: repo).get()) ?? RepoConfig(status: nil, sweep: nil, source: .none)
+        return SetupPrompt.make(
+            repo: repo, config: config, problem: problem, contract: contract, workflowDoc: workflowDoc,
+            cli: cliPath ?? "/Applications/Chief Stew.app/Contents/Helpers/chiefstew")
+    }
+
+    // MARK: repos
+
+    func addRepo(_ path: String) {
+        let path = PathMatch.normalize(path)
+        guard !repos.contains(path) else { return }
+        setRepos(repos + [path])
+        Task { await refresh(path) }
+    }
+
+    func removeRepo(_ path: String) {
+        setRepos(repos.filter { $0 != path })
+        snapshots[path] = nil
+        updateNotifications()
+    }
+
+    private func setRepos(_ list: [String]) {
+        repos = list
+        if !reposOverridden { UserDefaults.standard.set(list, forKey: RepoStore.key) }
+    }
+
+    // MARK: status and sweep
+
+    func refreshAll() async {
+        await withTaskGroup(of: Void.self) { group in
+            for repo in repos { group.addTask { await self.refresh(repo) } }
+        }
+    }
+
+    func refresh(_ repo: String) async {
+        guard !inflight.contains(repo) else {
+            rerun.insert(repo)  // an event arrived mid-run: go again once this one lands
+            return
+        }
+        inflight.insert(repo)
+        defer { inflight.remove(repo) }
+
+        var snap = snapshots[repo] ?? RepoSnapshot(path: repo)
+        switch await client() {
+        case .failure(let error):
+            if snap.statusError?.message != error.description {
+                snap.statusError = RepoError(
+                    message: error.description, since: Date(),
+                    hint: "Set the node path in Settings → General.")
+            }
+        case .success(let client):
+            switch await client.status(repo: repo) {
+            case .success(let report):
+                snap.status = report ?? StatusReport(builds: [])
+                snap.agentsOnly = report == nil
+                snap.statusAt = Date()
+                snap.statusError = nil
+                if let skipped = report?.skippedRows, skipped > 0 {
+                    log.error("\(repo, privacy: .public): skipped \(skipped) bad status rows")
+                }
+                // Sweep rides on status: it runs once status proves the repo speaks the contract,
+                // then whenever the last sweep is older than the sweep interval.
+                let due = snap.sweepAt.map {
+                    Date().timeIntervalSince($0) > TimeInterval(Self.sweepInterval.components.seconds)
+                } ?? true
+                if due { Task { await self.sweep(repo) } }
+            case .failure(let error):
+                log.error("\(repo, privacy: .public): \(error.description, privacy: .public)")
+                if snap.statusError?.message != error.description {
+                    snap.statusError = RepoError(
+                        message: error.description, since: Date(), hint: error.hint)
+                }
+            }
+        }
+        guard repos.contains(repo) else { return }  // removed while running
+        // Write back only what refresh owns: a sweep may have landed while status ran
+        // (review: concurrency-2).
+        var current = snapshots[repo] ?? RepoSnapshot(path: repo)
+        current.status = snap.status
+        current.statusAt = snap.statusAt
+        current.statusError = snap.statusError
+        current.agentsOnly = snap.agentsOnly
+        snapshots[repo] = current
+        updateNotifications()
+        dumpDebugState()
+
+        if rerun.remove(repo) != nil {
+            inflight.remove(repo)
+            await refresh(repo)
+        }
+    }
+
+    func sweepAll() async {
+        for repo in repos { await sweep(repo) }
+    }
+
+    /// Only for repos whose status already speaks the contract.
+    func sweep(_ repo: String) async {
+        guard snapshots[repo]?.status != nil, snapshots[repo]?.agentsOnly == false,
+            !sweeping.contains(repo),
+            case .success(let client) = await client()
+        else { return }
+        sweeping.insert(repo)
+        defer { sweeping.remove(repo) }
+        switch await client.sweep(repo: repo) {
+        case .success(let report):
+            guard let report else { return }  // no sweep command
+            snapshots[repo]?.sweep = report
+            snapshots[repo]?.sweepAt = Date()
+            dumpDebugState()
+        case .failure(let error):
+            log.error("\(repo, privacy: .public) sweep: \(error.description, privacy: .public)")
+        }
+    }
+
+    private func client() async -> Result<StatusClient, LoginEnvironment.Failure> {
+        if let login { return .success(StatusClient(login: login)) }
+        do {
+            let found = try await LoginEnvironment.resolve(nodeOverride: settings.nodePath)
+            log.info("node \(found.node ?? "none", privacy: .public) \(found.nodeVersion ?? "", privacy: .public)")
+            login = found
+            loginError = nil
+            return .success(StatusClient(login: found))
+        } catch let error as LoginEnvironment.Failure {
+            log.error("\(error.description, privacy: .public)")
+            loginError = error.description
+            return .failure(error)
+        } catch {
+            loginError = String(describing: error)
+            return .failure(.notFound(String(describing: error)))
+        }
+    }
+
+    // MARK: inbox
+
+    func drainInbox() {
+        let result = InboxReader.drain(paths.inbox)
+        if !result.rejected.isEmpty || result.expired > 0 {
+            log.info("inbox: \(result.rejected.count) rejected, \(result.expired) expired")
+        }
+        for var event in result.events {
+            guard let repo = registered(event.repo) else {
+                // Chief Stew's heartbeat told the emitter to stay quiet, so say it here.
+                log.info("inbox: \(event.kind, privacy: .public) for unregistered \(event.repo, privacy: .public)")
+                postFromEvent(event)
+                continue
+            }
+            // A worktree outside the repo is ignored: an event can't point Chief Stew at an
+            // arbitrary path to open later (review: event-path-launches-apps).
+            if let wt = event.worktree, !PathMatch.contains(repo, wt) { event.worktree = nil }
+            tracker.apply(event)
+            if event.kind == "gate.waiting", snapshots[repo]?.statusError != nil {
+                postFromEvent(event)  // the board can't show it while status is failing
+            }
+            scheduleRefresh(repo)
+        }
+        if !result.events.isEmpty {
+            saveAgents()
+            updateNotifications()  // agent needs-input notifies straight away
+            dumpDebugState()
+        }
+    }
+
+    /// Dev only: with `$CHIEFSTEW_DEBUG_DIR` set, write the menu-bar text and a panel render
+    /// after every update, so a run can be checked without screen-recording permission.
+    private func dumpDebugState() {
+        guard let dir = ProcessInfo.processInfo.environment["CHIEFSTEW_DEBUG_DIR"] else { return }
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let now = Date()
+        let board = board(now: now)
+        let menu = board.menu
+        let text = """
+            menu: \(menu.title ?? "(icon only)") attention=\(menu.attention) warning=\(menu.warning)
+            header: \(board.header)
+            needs: \(board.needsYou.map(\.menuTitle).joined(separator: ", "))
+            problems: \(board.problems.map(\.error.message).joined(separator: " | "))
+            permission: \(permission) ledger: \(ledger.sent.keys.sorted().joined(separator: ", "))
+
+            """
+        try? Data(text.utf8).write(to: url.appendingPathComponent("state.txt"))
+        let renderer = ImageRenderer(
+            content: PanelView(board: board, now: now)
+                .background(Color(nsColor: .windowBackgroundColor)))
+        renderer.scale = 2
+        if let tiff = renderer.nsImage?.tiffRepresentation,
+            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        {
+            try? png.write(to: url.appendingPathComponent("panel.png"))
+        }
+    }
+
+    private func postFromEvent(_ event: Event) {
+        guard permission == .granted, let notice = NotificationPlanner.notice(forEvent: event)
+        else { return }
+        let enabled = event.kind == "gate.waiting" ? settings.notifyGates : settings.notifyAgents
+        if enabled { notifier.post(notice) }
+    }
+
+    private func registered(_ path: String) -> String? {
+        let target = PathMatch.normalize(path)
+        return repos.first { PathMatch.normalize($0) == target }
+    }
+
+    private func scheduleRefresh(_ repo: String) {
+        pending[repo]?.cancel()
+        pending[repo] = Task { [weak self] in
+            try? await Task.sleep(for: Self.eventDebounce)
+            guard !Task.isCancelled else { return }
+            await self?.refresh(repo)
+        }
+    }
+
+    // MARK: actions
+
+    /// A notification's target: folders go to the worktree app, files to their default app.
+    private func open(_ target: String) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: target, isDirectory: &isDir) else { return }
+        if isDir.boolValue {
+            WorktreeApps.open(target, with: settings.worktreeApp)
+        } else {
+            openFile(target)
+        }
+    }
+
+    /// Files from status (gate artefacts, progress.md) open in their default app, but never
+    /// anything that could run: apps, scripts, .command files are revealed in Finder instead.
+    private func openFile(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        let runnable: Set<String> = ["app", "command", "tool", "sh", "zsh", "bash", "workflow", "scpt", "terminal", "pkg", "dmg"]
+        if runnable.contains(url.pathExtension.lowercased())
+            || NSWorkspace.shared.isFilePackage(atPath: path)
+            || FileManager.default.isExecutableFile(atPath: path)
+        {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func actions(openSettings: @escaping (SettingsTab) -> Void) -> PanelActions {
+        var a = PanelActions()
+        a.openFile = { [weak self] in self?.openFile($0) }
+        a.openFolder = { [weak self] in WorktreeApps.open($0, with: self?.settings.worktreeApp) }
+        a.openURL = { if let url = URL(string: $0) { NSWorkspace.shared.open(url) } }
+        a.copy = {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString($0, forType: .string)
+        }
+        a.refresh = { [weak self] in
+            Task {
+                await self?.refreshAll()
+                await self?.sweepAll()
+            }
+        }
+        a.installUpdate = { [weak self] in self?.installUpdate() }
+        a.openRepos = { [weak self] in
+            if self?.repos.isEmpty == true { self?.showAddRepo = true }
+            openSettings(.repos)
+        }
+        a.openSettings = { openSettings(.notifications) }
+        a.quit = { NSApplication.shared.terminate(nil) }
+        return a
+    }
+
+    // MARK: persistence
+
+    private static func load<T: Decodable>(_ type: T.Type, key: String) -> T? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private static func save<T: Encodable>(_ value: T, key: String) {
+        if let data = try? JSONEncoder().encode(value) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+}
+
+enum SettingsTab: Hashable { case repos, notifications, general }

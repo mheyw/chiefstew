@@ -1,0 +1,71 @@
+{
+  "v": 1,
+  "generatedAt": "2026-09-30T14:02:12.456Z",
+  "repo": "/Users/you/my-app",
+  "builds": [
+    {
+      "num": "174", "slug": "checkout_flow", "branch": "build/174-checkout-flow",
+      "refs": ["build/174-checkout-flow", "origin/build/174-checkout-flow"],
+      "worktree": "/Users/you/my-app/.claude/worktrees/build-174",
+      "merged": false, "lastCommitAt": "2026-09-30T13:40:02Z", "behind": 4, "flags": [],
+      "state": "Phase 4 ready 2026-09-30 — waiting on the Plan gate", "lane": "full",
+      "phases": [
+        { "n": 1, "name": "Brief", "status": "done", "startedAt": "2026-09-30T09:12:00+01:00", "doneAt": "2026-09-30" },
+        { "n": 2, "name": "Requirements", "status": "done", "startedAt": "2026-09-30T10:00:00+01:00", "doneAt": "2026-09-30" },
+        { "n": 3, "name": "Design", "status": "done", "startedAt": "2026-09-30T11:30:00+01:00", "doneAt": "2026-09-30" },
+        { "n": 4, "name": "Plan", "status": "active", "startedAt": "2026-09-30T12:01:00+01:00", "doneAt": null },
+        { "n": 5, "name": "Implement", "status": "pending", "startedAt": null, "doneAt": null },
+        { "n": 6, "name": "Review", "status": "pending", "startedAt": null, "doneAt": null },
+        { "n": 7, "name": "Retro", "status": "pending", "startedAt": null, "doneAt": null }
+      ],
+      "gates": [
+        { "gate": "design", "status": "approved", "at": "2026-09-30" },
+        { "gate": "plan", "status": "waiting", "at": "2026-09-30T13:50:00Z", "phase": 4,
+          "artefact": "/Users/you/my-app/.claude/worktrees/build-174/docs/builds/174_checkout_flow/plan.md",
+          "approve": "make approve GATE=plan BUILD=174" }
+      ],
+      "tasks": { "done": 0, "total": 9 },
+      "urls": { "admin": "http://build-174-checkout-flow.web.my-app.localhost:1355" },
+      "progress": "/Users/you/my-app/.claude/worktrees/build-174/docs/builds/174_checkout_flow/progress.md"
+    },
+    {
+      "num": "173", "slug": "search_index", "branch": "build/173-search-index",
+      "worktree": "/Users/you/my-app/.claude/worktrees/build-173",
+      "merged": false, "lastCommitAt": "2026-09-30T13:59:00Z", "behind": 4, "flags": [],
+      "state": "Phase 5 — Implement, step 3", "lane": "full",
+      "phases": [
+        { "n": 1, "name": "Brief", "status": "done", "startedAt": "2026-09-30T12:20:00Z" },
+        { "n": 2, "name": "Requirements", "status": "done" },
+        { "n": 3, "name": "Design", "status": "done" },
+        { "n": 4, "name": "Plan", "status": "done" },
+        { "n": 5, "name": "Implement", "status": "active", "startedAt": "2026-09-30 13:10" },
+        { "n": 6, "name": "Review", "status": "pending" },
+        { "n": 7, "name": "Retro", "status": "pending" }
+      ],
+      "gates": [{ "gate": "design", "status": "approved" }, { "gate": "plan", "status": "approved" }],
+      "tasks": { "done": 6, "total": 11 }
+    },
+    {
+      "num": "175", "slug": "copy_review", "branch": "build/175-copy-review",
+      "worktree": null, "merged": false, "lastCommitAt": 1759239000, "flags": ["idle"],
+      "state": "Phase 5 — Implement", "lane": "fast",
+      "phases": [
+        { "n": 1, "name": "Brief", "status": "done" },
+        { "n": 2, "name": "Requirements", "status": "pending", "skipped": true },
+        { "n": 3, "name": "Design", "status": "pending", "skipped": true },
+        { "n": 4, "name": "Plan", "status": "pending", "skipped": true },
+        { "n": 5, "name": "Implement", "status": "active" },
+        { "n": 6, "name": "Review", "status": "pending" },
+        { "n": 7, "name": "Retro", "status": "pending" }
+      ],
+      "tasks": { "done": 1, "total": 4 }
+    },
+    {
+      "num": "172", "slug": "bulk_actions", "branch": "build/172-bulk-actions",
+      "worktree": "/Users/you/my-app/.claude/worktrees/build-172",
+      "merged": false, "lastCommitAt": "2026-09-28T16:00:00Z", "flags": ["closed-unmerged", "idle"],
+      "state": "Closed 2026-09-28"
+    },
+    { "num": "999", "slug": "broken_row" }
+  ]
+}

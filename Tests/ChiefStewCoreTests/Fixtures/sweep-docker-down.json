@@ -1,0 +1,1 @@
+{ "v": 1, "repo": "/Users/you/my-app", "databases": { "checked": false }, "routes": [], "processes": [], "cleanup": [], "errors": ["docker not running: database check skipped"] }
