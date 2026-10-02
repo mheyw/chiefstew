@@ -245,7 +245,7 @@ public struct WorkflowEngine: Sendable {
         let mainTip = git.tip(main)
         let tips = builds.map { git.tip($0.ref) }
         for w in worktrees where w.path != repo && !claimed.contains(w.path) && w.branch != main {
-            for (i, b) in builds.enumerated() {
+            for i in builds.indices {
                 guard let tip = tips[i], tip != mainTip, !w.head.isEmpty else { continue }
                 if tip == w.head || git.isMerged(tip, into: w.head) {
                     builds[i].extraWorktrees.append(w.path)
