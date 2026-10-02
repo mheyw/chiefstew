@@ -362,7 +362,7 @@ struct NeedsRow: View {
     }
 
     /// The approve command runs in the build's worktree; make the copied text self-contained.
-    static func inWorktree(_ command: String, _ worktree: String?) -> String {
+    nonisolated static func inWorktree(_ command: String, _ worktree: String?) -> String {
         guard let worktree else { return command }
         let quoted = "'" + worktree.replacingOccurrences(of: "'", with: "'\\''") + "'"
         return "cd \(quoted) && \(command)"
