@@ -18,13 +18,32 @@ struct ChiefStewApp: App {
         MenuBarExtra {
             PanelHost(model: model)
         } label: {
-            MenuBarLabel(state: model.board(now: model.tick).menu)
+            LabelHost(model: model)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView(model: model)
         }
+    }
+}
+
+/// The menu-bar icon. Also reopens Settings at launch when an update restarted the app with it
+/// open (the label is the one view that exists as soon as the app starts).
+private struct LabelHost: View {
+    let model: AppModel
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        MenuBarLabel(state: model.board(now: model.tick).menu)
+            .task {
+                guard let tab = model.takeReopenSettingsTab() else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                model.settingsTab = tab
+                openSettings()
+                try? await Task.sleep(for: .milliseconds(200))
+                WindowFront.raiseSettings()
+            }
     }
 }
 

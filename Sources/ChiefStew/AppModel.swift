@@ -159,7 +159,7 @@ final class AppModel {
             Task { [weak self] in
                 while !Task.isCancelled {
                     await self?.refreshAll()
-                    await self?.checkForUpdate()
+                    await self?.checkForUpdate(.background)
                     try? await Task.sleep(for: Self.statusInterval)
                 }
             })
@@ -172,6 +172,7 @@ final class AppModel {
                 self?.heartbeat()
                 await self?.refreshAll()
                 await self?.sweepAll()
+                await self?.checkForUpdate(.background)
             }
         }
     }
@@ -189,7 +190,7 @@ final class AppModel {
         }
         tick = now
         if stale { Task { await refreshAll() } }
-        Task { await checkForUpdate(force: true) }
+        Task { await checkForUpdate(.panel) }
     }
 
     // MARK: updates
@@ -233,6 +234,7 @@ final class AppModel {
         guard updatesPossible else {
             return "Installed from a download, so it can't update itself. For automatic updates, install from a git clone of the Chief Stew repo (see its README)."
         }
+        if update == .installing { return "Installing \(updateTarget?.label ?? "the update")…" }
         if settings.updateMode == .off { return "Updates are off. You're on v\(installedVersion)." }
         if let t = updateTarget, case .available = update { return "\(t.label ?? "An update") is available." }
         if settings.updateChannel == .releases, let f = lastUpdateFetch, !f.ok {
@@ -242,16 +244,32 @@ final class AppModel {
         return "Up to date: v\(installedVersion)\(checked)."
     }
 
-    func checkForUpdate(force: Bool = false) async {
+    enum CheckReason {
+        /// The hourly loop, launch and wake.
+        case background
+        /// The panel opened: at most every 10 minutes.
+        case panel
+        /// Check now: straight away, and install whatever it finds.
+        case now
+    }
+
+    func checkForUpdate(_ reason: CheckReason = .background) async {
         guard let source, update != .installing, updatesPossible else { return }
-        guard settings.updateMode != .off || force else {
+        guard settings.updateMode != .off || reason == .now else {
             update = nil
             return
         }
-        // Releases mean a fetch from GitHub: every 4 hours (30 minutes when asked). Main is local.
-        let interval: TimeInterval = settings.updateChannel == .releases ? (force ? 30 * 60 : 4 * 3600) : (force ? 30 : Self.updateCheckInterval)
+        // A release check is a small `git fetch` of tags; main is purely local.
+        let interval: TimeInterval
+        switch (reason, settings.updateChannel) {
+        case (.now, _): interval = 0
+        case (.panel, .releases): interval = 10 * 60
+        case (.panel, .main): interval = 30
+        case (.background, .releases): interval = 3600
+        case (.background, .main): interval = Self.updateCheckInterval
+        }
         let now = Date()
-        guard now.timeIntervalSince(lastUpdateCheck) > interval || (force && lastUpdateCheck == .distantPast) else { return }
+        guard now.timeIntervalSince(lastUpdateCheck) >= interval else { return }
         lastUpdateCheck = now
 
         var target: UpdateTarget?
@@ -276,11 +294,13 @@ final class AppModel {
             notifier.withdraw([Self.updateNoticeID])  // an old "update available" is now wrong
             return
         }
-        if case .failed = update, target.id == updateTarget?.id { return }  // the same build failed
+        if case .failed = update, target.id == updateTarget?.id, reason != .now { return }  // the same build failed
         updateTarget = target
         update = .available(label: target.label)
 
-        if settings.updateMode == .automatic {
+        if reason == .now {
+            installUpdate()  // you asked: no waiting
+        } else if settings.updateMode == .automatic {
             installIfAutomatic()
         } else {
             let key = "updateNotifiedFor"
@@ -294,14 +314,26 @@ final class AppModel {
         }
     }
 
-    /// Automatic mode installs only while you're not using Chief Stew (panel and Settings
-    /// closed), so it never restarts under you.
+    /// Automatic mode waits only while the panel is open (seconds), so the app never restarts
+    /// under your click. Settings may be open: it's reopened where it was after the restart.
     func installIfAutomatic() {
-        guard settings.updateMode == .automatic, case .available = update, !panelOpen,
-            !(NSApp.windows.contains { $0.identifier == WindowFront.settingsID && $0.isVisible })
-        else { return }
+        guard settings.updateMode == .automatic, case .available = update, !panelOpen else { return }
         installUpdate()
     }
+
+    /// Set at launch when an update restarted the app with Settings open: reopen it there.
+    private(set) var reopenSettingsTab: SettingsTab? = {
+        let d = UserDefaults.standard
+        defer { d.removeObject(forKey: "reopenSettingsTab") }
+        return d.string(forKey: "reopenSettingsTab").flatMap(SettingsTab.init(rawValue:))
+    }()
+
+    func takeReopenSettingsTab() -> SettingsTab? {
+        defer { reopenSettingsTab = nil }
+        return reopenSettingsTab
+    }
+
+    var settingsOpen: Bool { NSApp.windows.contains { $0.identifier == WindowFront.settingsID && $0.isVisible } }
 
     /// After an update, the new copy says so once, with the release notes.
     func announceUpdateIfNew() {
@@ -352,6 +384,7 @@ final class AppModel {
         let target = updateTarget ?? UpdateTarget(ref: "refs/heads/main", label: nil, notes: nil, id: "")
         process.arguments = [(source.dir as NSString).appendingPathComponent("build.sh"), "update", target.ref]
         UserDefaults.standard.set(target.label ?? "the latest version", forKey: "pendingUpdateLabel")
+        if settingsOpen { UserDefaults.standard.set(settingsTab.rawValue, forKey: "reopenSettingsTab") }
         UserDefaults.standard.set(target.notes ?? "", forKey: "pendingUpdateNotes")
         process.currentDirectoryURL = URL(fileURLWithPath: source.dir)
         var env = ProcessInfo.processInfo.environment
@@ -811,4 +844,4 @@ final class AppModel {
     }
 }
 
-enum SettingsTab: Hashable { case repos, notifications, general }
+enum SettingsTab: String, Hashable { case repos, notifications, general }

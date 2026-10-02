@@ -29,9 +29,9 @@ Downloaded a zip instead of cloning? That works too (`./build.sh install` in the
 
 ## Updates
 
-Chief Stew keeps itself up to date from the git clone you installed from. Every few hours it checks the repo for a newer **release** (a `vX.Y.Z` tag), then builds and installs it in the background while you're not using the panel or Settings. Chief Stew restarts by itself and tells you what changed. If anything fails, the current copy keeps running and the panel offers **Try again** and **Open log**.
+Chief Stew keeps itself up to date from the git clone you installed from. It checks the repo for a newer **release** (a `vX.Y.Z` tag) when it starts, when it wakes, when you open the panel, and hourly. It builds the release in the background (about a minute), installs it the moment the panel isn't open, restarts by itself (reopening Settings if you had it open) and tells you what changed. If anything fails, the current copy keeps running and the panel offers **Try again** and **Open log**.
 
-- **Settings… → General → Updates:** choose Install automatically (the default), Ask first, or Don't check, and Releases (the default) or Latest main (for whoever develops Chief Stew). **Check now** checks straight away.
+- **Settings… → General → Updates:** choose Install automatically (the default), Ask first, or Don't check, and Releases (the default) or Latest main (for whoever develops Chief Stew). **Check now** checks and installs straight away.
 - Checking reads only Chief Stew's own repo on GitHub, using your normal git access. Offline, or without access, it simply doesn't update; nothing else is affected.
 - **By hand:** `./build.sh install` (your checkout) or `./build.sh update v0.3.0` (a release). **Undo:** `./build.sh rollback`.
 
@@ -41,7 +41,7 @@ Chief Stew keeps itself up to date from the git clone you installed from. Every 
 ./release.sh 0.3.0
 ```
 
-This runs the tests, sets `VERSION`, tags `v0.3.0` with the changes since the last release (which teammates see after updating), and pushes. Everyone on the Releases channel has it within a few hours. Push to `main` as often as you like in between: only tagged releases reach the team. GitHub Actions runs the tests on every push.
+This runs the tests, sets `VERSION`, tags `v0.3.0` with the changes since the last release (which teammates see after updating), and pushes. Everyone on the Releases channel has it within the hour (or as soon as they open the panel). Push to `main` as often as you like in between: only tagged releases reach the team. GitHub Actions runs the tests on every push.
 
 ## Connect a repo by hand
 

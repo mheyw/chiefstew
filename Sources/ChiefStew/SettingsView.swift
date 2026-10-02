@@ -24,8 +24,6 @@ struct SettingsView: View {
             window.identifier = WindowFront.settingsID
             WindowFront.raise(window)
         })
-        // An automatic update waits while Settings is open; closing it lets it go ahead.
-        .onDisappear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.installIfAutomatic() } }
     }
 }
 
@@ -185,10 +183,13 @@ private struct GeneralPane: View {
                         Text("Latest main (for developing Chief Stew)").tag(UpdateChannel.main)
                     }
                     HStack {
-                        Text("Installs happen while the panel and Settings are closed, and Chief Stew restarts by itself.")
+                        Text(model.update == .installing
+                            ? "Installing… Chief Stew builds it (about a minute), restarts, and reopens Settings here."
+                            : "Checks hourly. An update installs in the background and Chief Stew restarts by itself.")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("Check now") { Task { await model.checkForUpdate(force: true) } }
+                        Button("Check now") { Task { await model.checkForUpdate(.now) } }
+                            .disabled(model.update == .installing)
                     }
                 }
             }
