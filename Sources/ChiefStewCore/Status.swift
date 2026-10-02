@@ -62,6 +62,8 @@ public struct BuildRow: Decodable, Sendable, Equatable {
     public var lastCommitAt: Date
     public var merged: Bool
     public var worktree: String?
+    /// Other checkouts working on this build (e.g. an agent worktree branched from it).
+    public var worktrees: [String] = []
     public var behind: Int?
     public var flags: [String]
     public var lane: String?
@@ -99,7 +101,7 @@ public struct BuildRow: Decodable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case num, slug, branch, state, lastCommitAt, merged, worktree, behind, flags, lane,
+        case num, slug, branch, state, lastCommitAt, merged, worktree, worktrees, behind, flags, lane,
             phases, gates, tasks, urls, progress, parked
     }
 
@@ -112,6 +114,7 @@ public struct BuildRow: Decodable, Sendable, Equatable {
         lastCommitAt = try c.decode(FlexibleDate.self, forKey: .lastCommitAt).date
         merged = try c.decode(Bool.self, forKey: .merged)
         worktree = c.lenient(String.self, .worktree)
+        worktrees = c.lenient([String].self, .worktrees) ?? []
         behind = c.lenient(Int.self, .behind)
         flags = c.lenient([String].self, .flags) ?? []
         lane = c.lenient(String.self, .lane)
@@ -172,6 +175,9 @@ public struct GateInfo: Decodable, Sendable, Equatable {
     public var status: String
     public var at: Date?
     public var artefact: String?
+    /// The artefact in git when it isn't on disk (the build isn't checked out): `ref:path`.
+    /// Chief Stew opens a read-only copy.
+    public var artefactRef: String?
     public var approve: String?
     /// The phase whose exit this gate signs off, when the status says so.
     public var phaseNumber: Int?
@@ -188,7 +194,7 @@ public struct GateInfo: Decodable, Sendable, Equatable {
         self.approve = approve
     }
 
-    enum CodingKeys: String, CodingKey { case gate, status, at, artefact, approve, phase }
+    enum CodingKeys: String, CodingKey { case gate, status, at, artefact, artefactRef, approve, phase }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -197,6 +203,7 @@ public struct GateInfo: Decodable, Sendable, Equatable {
         at = c.lenient(FlexibleDate.self, .at)?.date
         artefact = c.lenient(String.self, .artefact)
         approve = c.lenient(String.self, .approve)
+        artefactRef = c.lenient(String.self, .artefactRef)
         phaseNumber = c.lenient(Int.self, .phase)
     }
 

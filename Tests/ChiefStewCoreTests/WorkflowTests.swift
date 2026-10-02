@@ -252,3 +252,59 @@ private let typical = """
     let found = RepoSuggestions.find(home: home.path).map { URL(fileURLWithPath: $0).lastPathComponent }
     #expect(found.sorted() == ["my-app", "web"])
 }
+
+// MARK: - Builds the first version missed (found when a real repo was set up)
+
+@Test func remoteOnlyBuildsAreOptIn() throws {
+    let (repo, _) = try sampleRepo()
+    let origin = repo.deletingLastPathComponent().appendingPathComponent("origin.git")
+    try run(repo.deletingLastPathComponent(), "init", "-q", "--bare", origin.path)
+    try run(repo, "remote", "add", "origin", origin.path)
+    try run(repo, "checkout", "-q", "-b", "feature/r", "main")
+    try run(repo, "commit", "-q", "--allow-empty", "-m", "remote work")
+    try run(repo, "push", "-q", "origin", "feature/r", "main")
+    try run(repo, "checkout", "-q", "main")
+    try run(repo, "branch", "-q", "-D", "feature/r")  // only origin/feature/r is left
+
+    let local = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}"]]).get()
+    #expect(!WorkflowEngine(repo: repo.path, spec: local).run().report.builds.map(\.slug).contains("r"))
+    let remote = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}", "remote": true]]).get()
+    let rows = WorkflowEngine(repo: repo.path, spec: remote).run().report.builds
+    #expect(rows.contains { $0.slug == "r" && $0.worktree == nil })
+}
+
+@Test func anAgentWorktreeOnAnotherBranchCountsForItsBuild() throws {
+    let (repo, wt) = try sampleRepo()
+    try run(wt, "add", ".")
+    try run(wt, "commit", "-q", "-m", "a work")
+    let agentWT = repo.deletingLastPathComponent().appendingPathComponent("agent-1")
+    try run(repo, "worktree", "add", "-q", "-b", "worktree-agent-1", agentWT.path, "feature/a")
+    try write(repo, ".chiefstew.json", typical)
+    let spec = try RepoConfig.load(repo: repo.path).get().workflow!
+    let a = try #require(WorkflowEngine(repo: repo.path, spec: spec).run().report.builds.first { $0.slug == "a" })
+    #expect(a.worktrees == [PathMatch.normalize(agentWT.path)])
+
+    // An agent asking a question in that worktree shows against build "a".
+    let agent = AgentState(
+        session: "s", repo: repo.path, path: PathMatch.normalize(agentWT.path), lastEventAt: Date(),
+        lastKind: "agent.needs_input", needsInput: .init(since: Date(), message: "ok?"), agent: "claude-code")
+    let board = Board.make(
+        repos: [RepoSnapshot(path: repo.path, status: StatusReport(builds: [a]))], agents: [agent], now: Date())
+    #expect(board.needsYou.contains { $0.card?.slug == "a" && $0.id == "agent-s" })
+}
+
+@Test func aGateFileOnAnUncheckedOutBranchIsReadFromGit() throws {
+    let (repo, _) = try sampleRepo()
+    try run(repo, "checkout", "-q", "feature/c")
+    try write(repo, "docs/features/c/STATUS.md", "Ready\nReview: waiting\n")
+    try write(repo, "docs/features/c/PR.md", "the PR")
+    try run(repo, "add", ".")
+    try run(repo, "commit", "-q", "-m", "c ready")
+    try run(repo, "checkout", "-q", "main")
+    try write(repo, ".chiefstew.json", typical)
+    let spec = try RepoConfig.load(repo: repo.path).get().workflow!
+    let c = try #require(WorkflowEngine(repo: repo.path, spec: spec).run().report.builds.first { $0.slug == "c" })
+    let gate = try #require(c.gates.first)
+    #expect(gate.artefact == nil)
+    #expect(gate.artefactRef == "feature/c:docs/features/c/PR.md")
+}

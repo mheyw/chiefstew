@@ -203,12 +203,13 @@ The status command prints one JSON object to stdout and nothing else:
 | `num`, `slug`, `branch`, `state`, `lastCommitAt`, `merged` | yes | `num` is a short ID shown first ("012"). `state` is one plain-text line. `lastCommitAt` is ISO 8601, or unix seconds. |
 | `generatedAt`, `repo` | no | |
 | `worktree` | no | The checkout's path, or `null` if the branch isn't checked out. It's what agent sessions are matched against. |
+| `worktrees` | no | Other checkouts working on this build (e.g. an agent's worktree on its own branch); agent sessions there count for it too. |
 | `behind` | no | Commits behind the main branch, from local refs. |
 | `flags` | no | `closed-unmerged` (finished but not merged: **needs you**), `idle`, `behind`. |
 | `lane` | no | A repo-defined route. |
 | `parked` | no | `true`: set aside on purpose. It's dimmed, never in the menu bar, and its gates and merges don't need you. If absent, a `state` starting with "Parked" counts. |
 | `phases` | no | In order. `status` is `done`, `active` or `pending`. `skipped: true` hides a phase that isn't on this build's route. Times can be ISO, `YYYY-MM-DD` or local `YYYY-MM-DD HH:MM`. |
-| `gates` | no | `status` is `waiting` or `approved`. `at` is when it started waiting (shown as "waiting 12 min"). `phase` is the phase the gate signs off, and its dot turns orange. `artefact` is the file to review; it opens in its default app, and anything executable is only revealed in Finder. `approve` is the command that signs it off; it's copied, never run. |
+| `gates` | no | `status` is `waiting` or `approved`. `at` is when it started waiting (shown as "waiting 12 min"). `phase` is the phase the gate signs off, and its dot turns orange. `artefact` is the file to review; it opens in its default app, and anything executable is only revealed in Finder. `artefactRef` (`ref:path`) names it in git when it isn't on disk; Chief Stew opens a read-only copy. `approve` is the command that signs it off; it's copied, never run. |
 | `tasks` | no | `done` / `total`. |
 | `urls` | no | Name → URL; the first is offered as "Open app". |
 | `progress` | no | A file to open for detail. |

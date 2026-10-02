@@ -4,6 +4,8 @@ import SwiftUI
 /// What the panel's buttons do. The app wires these to NSWorkspace and the pasteboard.
 public struct PanelActions {
     public var openFile: (String) -> Void = { _ in }
+    /// Opens a read-only copy of `ref:path` from the repo at the first argument.
+    public var openFromGit: (String, String) -> Void = { _, _ in }
     public var openFolder: (String) -> Void = { _ in }
     public var openURL: (String) -> Void = { _ in }
     public var copy: (String) -> Void = { _ in }
@@ -301,8 +303,15 @@ struct NeedsRow: View {
                             actions.openFile(artefact)
                         }
                         .buttonStyle(PillButtonStyle(primary: true))
+                    } else if let ref = gate.artefactRef {
+                        // Not checked out: a read-only copy from the branch.
+                        Button("Open \(URL(fileURLWithPath: String(ref.split(separator: ":", maxSplits: 1).last ?? "")).lastPathComponent)") {
+                            actions.openFromGit(item.repoPath, ref)
+                        }
+                        .buttonStyle(PillButtonStyle(primary: true))
+                        .help("Not checked out: opens a read-only copy from \(ref.split(separator: ":").first ?? "")")
                     }
-                    worktreeButton(primary: gate.artefact == nil)
+                    worktreeButton(primary: gate.artefact == nil && gate.artefactRef == nil)
                     if let approve = gate.approve {
                         Button("Copy approve command") {
                             actions.copy(Self.inWorktree(approve, item.worktree))

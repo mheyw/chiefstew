@@ -56,6 +56,7 @@ public enum SetupPrompt {
             - Phases, gates and tasks are usually markdown: checkbox lines (`- [x] Design`) or lines like `Review: waiting`. Use `"list": "checkboxes"` for the first and a regular expression with named groups for the second. Group names: `n`, `name`, `done`, `started`, `doneAt` for phases; `gate`, `status`, `at` for gates.
             - `artefact` is the file a reviewer opens at a gate. `approve` is the exact command that signs a gate off, if the repo has one. Chief Stew copies it and never runs it.
             - `parked` (set aside) and `closed` (finished, waiting to merge) are regular expressions on the state line.
+            - If builds can exist only on the remote (pushed from another machine or by a teammate), add `"remote": true` to `builds`.
 
             ---
 

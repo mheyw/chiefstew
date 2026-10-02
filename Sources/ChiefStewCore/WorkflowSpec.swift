@@ -51,6 +51,8 @@ public struct WorkflowSpec: Sendable, Equatable {
     }
 
     public var builds: Builds
+    /// With `branches`: also count builds that only exist as `origin/…` (already fetched; never fetches).
+    public var includeRemote = false
     public var folder: String?
     public var state: TextRule?
     public var lane: TextRule?
@@ -62,7 +64,7 @@ public struct WorkflowSpec: Sendable, Equatable {
     public var tasks: Locator?
 
     public static func == (a: WorkflowSpec, b: WorkflowSpec) -> Bool {
-        a.builds == b.builds && a.folder == b.folder && a.state == b.state && a.lane == b.lane
+        a.builds == b.builds && a.includeRemote == b.includeRemote && a.folder == b.folder && a.state == b.state && a.lane == b.lane
             && a.parked == b.parked && a.closed == b.closed && a.phases == b.phases
             && a.skip?.lane == b.skip?.lane && a.skip?.phases == b.skip?.phases && a.gates == b.gates
             && a.tasks == b.tasks
@@ -115,7 +117,7 @@ public struct WorkflowSpec: Sendable, Equatable {
         // Keys each rule understands. Anything else is reported: a guess like "line": 1 must
         // not look as if it did something.
         let allowed: [String: Set<String>] = [
-            "builds": ["from", "branch", "folder"],
+            "builds": ["from", "branch", "folder", "remote"],
             "state": ["file", "section", "pick", "match", "default"],
             "lane": ["file", "section", "pick", "match", "default"],
             "parked": ["state"], "closed": ["state"],
@@ -186,6 +188,7 @@ public struct WorkflowSpec: Sendable, Equatable {
 
         var spec = WorkflowSpec(builds: builds ?? .worktrees)
         spec.folder = folder
+        spec.includeRemote = (object("builds")?["remote"] as? Bool) ?? false
         spec.state = textRule("state")
         spec.lane = textRule("lane")
         spec.parked = stateRegex("parked")

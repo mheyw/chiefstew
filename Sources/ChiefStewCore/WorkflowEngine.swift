@@ -38,6 +38,19 @@ struct GitReader: Sendable {
 
     func branches() -> [String] { lines(["for-each-ref", "--format=%(refname:short)", "refs/heads"]) }
 
+    /// `origin/…` branches already fetched, without the `origin/` prefix.
+    func remoteBranches() -> [String] {
+        lines(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"])
+            .filter { $0.hasPrefix("origin/") && $0 != "origin/HEAD" && $0 != "origin" }
+            .map { String($0.dropFirst(7)) }
+    }
+
+    func tip(_ ref: String) -> String? {
+        run(["rev-parse", "--verify", "--quiet", "\(ref)^{commit}"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func exists(_ ref: String, _ path: String) -> Bool { run(["cat-file", "-e", "\(ref):\(path)"]) != nil }
+
     /// The branch builds merge into: origin's default if known, else main, else master.
     func mainBranch() -> String {
         if let head = run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])?
@@ -113,6 +126,8 @@ public struct WorkflowEngine: Sendable {
         var ref: String
         /// The checkout on disk, if there is one.
         var worktree: String?
+        /// Other checkouts on this build: worktrees on differently-named branches built on it.
+        var extraWorktrees: [String] = []
     }
 
     public func run(now: Date = Date()) -> (report: StatusReport, diagnostics: [BuildDiagnostics]) {
@@ -186,6 +201,22 @@ public struct WorkflowEngine: Sendable {
                         num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch, ref: branch,
                         worktree: byBranch[branch]))
             }
+            // Builds that only exist on origin (another machine, a teammate): opt-in, never fetched.
+            if spec.includeRemote {
+                let local = Set(git.branches())
+                for branch in git.remoteBranches() where !local.contains(branch) && branch != main {
+                    guard let g = Self.groups(re, branch) else { continue }
+                    if git.isMerged("origin/\(branch)", into: main) {
+                        skipped.append("origin/\(branch): already merged into \(main)")
+                        continue
+                    }
+                    out.append(
+                        Candidate(
+                            num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch,
+                            ref: "origin/\(branch)", worktree: nil))
+                }
+            }
+            attachOtherWorktrees(&out, main: main, worktrees: worktrees)
             return out.sorted { $0.num < $1.num }
         case .folders(let pattern):
             let dir = (pattern as NSString).deletingLastPathComponent
@@ -195,6 +226,23 @@ public struct WorkflowEngine: Sendable {
                 guard let g = Self.groups(re, name) else { return nil }
                 return Candidate(
                     num: g["num"] ?? name, slug: g["slug"] ?? name, branch: main, ref: main, worktree: repo)
+            }
+        }
+    }
+
+    /// Worktrees on branches that don't match the pattern (an agent's worktree branched from a
+    /// build, say) belong to the build whose tip they're built on: agents there count for it.
+    func attachOtherWorktrees(_ builds: inout [Candidate], main: String, worktrees: [GitReader.Worktree]) {
+        let claimed = Set(builds.compactMap(\.worktree))
+        let mainTip = git.tip(main)
+        let tips = builds.map { git.tip($0.ref) }
+        for w in worktrees where w.path != repo && !claimed.contains(w.path) && w.branch != main {
+            for (i, b) in builds.enumerated() {
+                guard let tip = tips[i], tip != mainTip, !w.head.isEmpty else { continue }
+                if tip == w.head || git.isMerged(tip, into: w.head) {
+                    builds[i].extraWorktrees.append(w.path)
+                    break
+                }
             }
         }
     }
@@ -228,6 +276,10 @@ public struct WorkflowEngine: Sendable {
         var row = BuildRow(
             num: c.num, slug: c.slug, branch: c.branch, state: "", lastCommitAt: last?.date ?? now,
             merged: false, worktree: c.worktree, behind: git.behind(c.ref, main))
+        row.worktrees = c.extraWorktrees
+        if !c.extraWorktrees.isEmpty {
+            note("checkouts", true, "also worked on in " + c.extraWorktrees.map { PathMatch.relative($0, to: repo) }.joined(separator: ", "))
+        }
 
         // state
         if let rule = spec.state {
@@ -308,11 +360,14 @@ public struct WorkflowEngine: Sendable {
             at: r["at"].flatMap { LooseDate.parse($0.replacingOccurrences(of: "since ", with: "")) },
             phase: rule.phase[name])
         if status == "waiting" {
-            if let a = rule.artefact[name] ?? rule.artefactTemplate.map({ Self.fill($0, c, gate: name) }),
-                let wt = c.worktree
-            {
-                let path = (wt as NSString).appendingPathComponent((base as NSString).appendingPathComponent(a))
-                if FileManager.default.fileExists(atPath: path) { info.artefact = path }
+            if let a = rule.artefact[name] ?? rule.artefactTemplate.map({ Self.fill($0, c, gate: name) }) {
+                let rel = (base as NSString).appendingPathComponent(a)
+                if let wt = c.worktree, FileManager.default.fileExists(atPath: (wt as NSString).appendingPathComponent(rel)) {
+                    info.artefact = (wt as NSString).appendingPathComponent(rel)
+                } else if git.exists(c.ref, rel) {
+                    // Not checked out: Chief Stew opens a read-only copy from git.
+                    info.artefactRef = "\(c.ref):\(rel)"
+                }
             }
             info.approve = rule.approve.map { Self.fill($0, c, gate: name) }
         }

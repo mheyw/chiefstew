@@ -79,7 +79,11 @@ chiefstew status   # the exact JSON Chief Stew will show (contract § 4)
 
 `builds.folder` (with `worktrees` or `branches`) is where a build's files live, relative to its checkout. It takes `{num}`, `{slug}` and `{branch}`, and its last part may use `*`, e.g. `docs/builds/{num}_*`. Without it, files are read from the checkout's root.
 
-A branch that's merged into the main branch (origin's default, else `main`, else `master`) leaves the list, unless it's still checked out in a worktree. A brand-new branch looks merged to git, so worktrees always count. A build checked out in a worktree is read from disk, so uncommitted edits show; otherwise it's read from git.
+A branch that's merged into the main branch (origin's default, else `main`, else `master`) leaves the list, unless it's still checked out in a worktree. A brand-new branch looks merged to git, so worktrees always count.
+
+With `branches`, add `"remote": true` to also count builds that only exist as `origin/…` (pushed from another machine, or by a teammate). Chief Stew never fetches, so these are as fresh as your last `git fetch`.
+
+A worktree on a branch that doesn't match the pattern (an agent's worktree branched from a build, say) is attached to the build it's built on, so agents working there count for that build. A build checked out in a worktree is read from disk, so uncommitted edits show; otherwise it's read from git.
 
 ### Finding the text
 
@@ -97,7 +101,7 @@ Every field below says where to read:
 | `parked` | `state`: a regex on the state line | set aside: dimmed, and doesn't need you |
 | `closed` | `state`: a regex on the state line | finished but not merged: needs you |
 | `phases` | `list`: `"checkboxes"` (each `- [ ]`/`- [x]` line is a phase), or a regex applied per line with groups `n`, `name`, `done` (`x` or `true` means done), `started`, `doneAt`. Optional `skip: { "lane": "fast", "phases": [2, 3] }`. | the phase dots. The first unfinished phase is active, or the one with a `started` time if your regex captures `started`. |
-| `gates` | `list`: a regex per line with groups `gate`, `status` (words like waiting/open/pending, or approved/passed/done), `at`; or `"checkboxes"` (unticked means waiting). Optional `phase` (gate → phase number), `artefact` (one path template, or gate → path), and `approve` (a command template using `{gate}`, `{num}`, `{slug}`). | gates. A waiting gate **needs you**, with the artefact to open and the approve command to copy (Chief Stew never runs it). |
+| `gates` | `list`: a regex per line with groups `gate`, `status` (words like waiting/open/pending, or approved/passed/done), `at`; or `"checkboxes"` (unticked means waiting). Optional `phase` (gate → phase number), `artefact` (one path template, or gate → path), and `approve` (a command template using `{gate}`, `{num}`, `{slug}`). | gates. A waiting gate **needs you**, with the artefact to open (a read-only copy from git when the build isn't checked out) and the approve command to copy (Chief Stew never runs it). |
 | `tasks` | `count: "checkboxes"` | done / total |
 
 Unknown keys are reported by `chiefstew check`, so a typo never silently does nothing.

@@ -612,6 +612,37 @@ final class AppModel {
         }
     }
 
+    /// A file that's only in git (`ref:path`, the build isn't checked out): read it with
+    /// `git show` (read-only), save a read-only copy in the cache folder, and open that.
+    func openFromGit(repo: String, spec: String) async {
+        guard let colon = spec.firstIndex(of: ":") else { return }
+        let ref = String(spec[..<colon])
+        let path = String(spec[spec.index(after: colon)...])
+        guard !repo.isEmpty, !path.contains(".."),
+            let r = try? await CommandRunner.run(
+                "/usr/bin/git", ["-C", repo, "show", spec],
+                environment: ["GIT_OPTIONAL_LOCKS": "0", "PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()],
+                timeout: 10),
+            r.exitCode == 0, r.stdout.count <= 2 * 1024 * 1024
+        else {
+            log.error("couldn't read \(spec, privacy: .public) from git")
+            return
+        }
+        let safe = { (s: String) in s.map { $0.isLetter || $0.isNumber || "-_.".contains($0) ? $0 : "_" } }
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Caches/Chief Stew/artefacts")
+            .appendingPathComponent(String(safe(URL(fileURLWithPath: repo).lastPathComponent)))
+            .appendingPathComponent(String(safe(ref)))
+        let file = dir.appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        try? fm.removeItem(at: file)
+        guard (try? r.stdout.write(to: file)) != nil else { return }
+        try? fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)  // a copy, not the real file
+        openFile(file.path)
+    }
+
     /// Files from status (gate artefacts, progress.md) open in their default app, but never
     /// anything that could run: apps, scripts, .command files are revealed in Finder instead.
     private func openFile(_ path: String) {
@@ -630,6 +661,7 @@ final class AppModel {
     func actions(openSettings: @escaping (SettingsTab) -> Void) -> PanelActions {
         var a = PanelActions()
         a.openFile = { [weak self] in self?.openFile($0) }
+        a.openFromGit = { [weak self] repo, spec in Task { await self?.openFromGit(repo: repo, spec: spec) } }
         a.openFolder = { [weak self] in WorktreeApps.open($0, with: self?.settings.worktreeApp) }
         a.openURL = { if let url = URL(string: $0) { NSWorkspace.shared.open(url) } }
         a.copy = {

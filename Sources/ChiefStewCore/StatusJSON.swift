@@ -13,6 +13,7 @@ public enum StatusJSON {
                 "lastCommitAt": iso.string(from: b.lastCommitAt), "merged": b.merged,
                 "worktree": b.worktree ?? NSNull(),
             ]
+            if !b.worktrees.isEmpty { row["worktrees"] = b.worktrees }
             if let v = b.behind { row["behind"] = v }
             if !b.flags.isEmpty { row["flags"] = b.flags }
             if let v = b.lane { row["lane"] = v }
@@ -32,6 +33,7 @@ public enum StatusJSON {
                     if let t = g.at { d["at"] = iso.string(from: t) }
                     if let v = g.phaseNumber { d["phase"] = v }
                     if let v = g.artefact { d["artefact"] = v }
+                    if let v = g.artefactRef { d["artefactRef"] = v }
                     if let v = g.approve { d["approve"] = v }
                     return d
                 }

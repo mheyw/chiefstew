@@ -86,6 +86,8 @@ public struct NeedsItem: Sendable, Equatable, Identifiable {
     public var card: BuildCard?
     public var repoName: String
     public var worktree: String?
+    /// The repo's path, for reading an artefact from git.
+    public var repoPath: String = ""
 
     /// Short text for the menu bar when this is the only item.
     public var menuTitle: String {
@@ -194,9 +196,9 @@ extension Board {
             var seen = Set<String>()
             for row in rows where seen.insert(row.num).inserted {
                 let same = rows.filter { $0.num == row.num }
-                let primary =
-                    same.first { $0.branch.hasPrefix("build/\(row.num)-") } ?? same[0]
-                builds.append((repo, primary, same.compactMap(\.worktree)))
+                // Prefer the row whose branch carries the build's ID.
+                let primary = same.first { $0.branch.contains(row.num) } ?? same[0]
+                builds.append((repo, primary, same.compactMap(\.worktree) + same.flatMap(\.worktrees)))
             }
         }
 
@@ -227,7 +229,7 @@ extension Board {
                         NeedsItem(
                             id: "\(id)#gate-\(gate.gate)", kind: .gate(gate),
                             since: gate.at ?? row.lastCommitAt, card: card, repoName: repo.name,
-                            worktree: row.worktree))
+                            worktree: row.worktree, repoPath: repo.path))
                     needBuilds.insert(id)
                 }
                 if row.flags.contains("closed-unmerged") {
