@@ -20,31 +20,41 @@ struct AddRepoWizard: View {
     @State private var showDetails = false
     @State private var watchedStamp: Date?
     @State private var watcher: Task<Void, Never>?
+    /// Added by this wizard (not already registered): swapped out if another folder is chosen.
+    @State private var addedHere: String?
+    /// Opened from a repo's "Set up…" rather than "Add Repo…".
+    @State private var settingUp = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Add a repo").font(.title2.bold())
-            step(1, "Choose a repo") { chooseStep }
+            Text(settingUp ? "Set up \(repo.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "repo")" : "Add a repo")
+                .font(.title2.bold())
+            step(1, "Choose a repo", done: alreadyAdded) { chooseStep }
             step(2, "Agent notifications", done: model.hooksState == .installed) { hooksStep }
             step(3, "Build status (optional)", done: (checkResult?.ok ?? test?.ok) == true && isConfigured) { statusStep }
                 .disabled(repo == nil)
                 .opacity(repo == nil ? 0.5 : 1)
+            // The repo is added the moment it's chosen (step 1); steps 2 and 3 are optional
+            // extras, so there's no separate "Add" to find.
             HStack {
-                Spacer()
-                Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
-                Button(alreadyAdded ? "Done" : "Add Repo") {
-                    if let repo, !alreadyAdded { model.addRepo(repo) }
-                    close()
+                if alreadyAdded {
+                    Text("Steps 2 and 3 are optional. You can come back to them any time from Repos → Set up…")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(repo == nil)
+                Spacer()
+                Button("Done") { close() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
         .frame(width: 560)
+        .onExitCommand { close() }  // Esc closes too; the repo stays added
         .onAppear {
             model.refreshHooksState()
-            if let preset = model.wizardRepo { select(preset) }
+            if let preset = model.wizardRepo {
+                settingUp = true
+                select(preset)
+            }
         }
     }
 
@@ -64,12 +74,18 @@ struct AddRepoWizard: View {
                         Text(URL(fileURLWithPath: repo).lastPathComponent).fontWeight(.medium)
                         Text(repo).font(.caption).foregroundStyle(.secondary)
                     }
-                    if alreadyAdded { Text("already added").font(.caption).foregroundStyle(.secondary) }
+                    if alreadyAdded {
+                        Label("Added. Chief Stew is watching this repo.", systemImage: "checkmark.circle.fill")
+                            .font(.caption).foregroundStyle(.green)
+                        if !settingUp {
+                            Button("Remove") { removeChosen() }.buttonStyle(.link).font(.caption)
+                        }
+                    }
                 } else {
                     Text("Any git repo: existing or brand new.").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Choose…") { choose() }
+                if !settingUp { Button(repo == nil ? "Choose…" : "Choose another…") { choose() } }
             }
             let suggestions = RepoStore.suggestions().filter { !model.repos.contains($0) && $0 != repo }
             if repo == nil, !suggestions.isEmpty {
@@ -221,14 +237,36 @@ struct AddRepoWizard: View {
         }
         pickError = nil
         // Always the main working tree: worktrees of it are found through its status.
-        repo = checkout.repo
+        let chosen = checkout.repo
         if checkout.repo != path {
             pickError = "That's a worktree; using its main repo, \(checkout.repo)."
+        }
+        // Choosing a different folder replaces the one this wizard just added.
+        if let previous = addedHere, previous != chosen {
+            model.removeRepo(previous)
+            addedHere = nil
+        }
+        repo = chosen
+        // Add it now: watching agents is useful straight away, and the rest is optional.
+        if !model.repos.contains(chosen) {
+            model.addRepo(chosen)
+            addedHere = chosen
         }
         test = nil
         checkResult = nil
         launchMessage = nil
         check()
+    }
+
+    private func removeChosen() {
+        if let repo { model.removeRepo(repo) }
+        addedHere = nil
+        repo = nil
+        config = nil
+        test = nil
+        checkResult = nil
+        launchMessage = nil
+        watcher?.cancel()
     }
 
     private func check() {
