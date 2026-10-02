@@ -17,29 +17,6 @@ enum RepoStore {
         return defaults.stringArray(forKey: key) ?? []
     }
 
-    /// Git repos in the usual places (~/Developer, ~/Projects, ~/Code, ~/src, ~/GitHub, and
-    /// the home folder itself), one level deep. Repos already set up for Chief Stew come first.
-    static func suggestions() -> [String] {
-        let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser.path
-        let roots = ["Developer", "Projects", "Code", "src", "GitHub", "Documents/GitHub", ""]
-            .map { $0.isEmpty ? home : (home as NSString).appendingPathComponent($0) }
-        var found: [String] = []
-        for root in roots {
-            for child in ((try? fm.contentsOfDirectory(atPath: root)) ?? []).sorted()
-            where !child.hasPrefix(".") {
-                let path = (root as NSString).appendingPathComponent(child)
-                if fm.fileExists(atPath: (path as NSString).appendingPathComponent(".git")),
-                    !found.contains(path)
-                {
-                    found.append(path)
-                }
-            }
-        }
-        func ready(_ p: String) -> Bool {
-            if case .success(let c) = RepoConfig.load(repo: p) { return c.source != .none }
-            return true
-        }
-        return found.filter(ready) + found.filter { !ready($0) }
-    }
+    /// Repos to suggest, without touching macOS-protected folders (see RepoSuggestions).
+    static func suggestions() -> [String] { RepoSuggestions.find() }
 }

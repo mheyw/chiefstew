@@ -24,6 +24,8 @@ struct AddRepoWizard: View {
     @State private var addedHere: String?
     /// Opened from a repo's "Set up…" rather than "Add Repo…".
     @State private var settingUp = false
+    /// Found once, in the background, when the wizard opens.
+    @State private var suggestions: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -54,6 +56,10 @@ struct AddRepoWizard: View {
             if let preset = model.wizardRepo {
                 settingUp = true
                 select(preset)
+            } else {
+                Task {
+                    suggestions = await Task.detached { RepoStore.suggestions() }.value
+                }
             }
         }
     }
@@ -87,7 +93,7 @@ struct AddRepoWizard: View {
                 Spacer()
                 if !settingUp { Button(repo == nil ? "Choose…" : "Choose another…") { choose() } }
             }
-            let suggestions = RepoStore.suggestions().filter { !model.repos.contains($0) && $0 != repo }
+            let suggestions = suggestions.filter { !model.repos.contains($0) && $0 != repo }
             if repo == nil, !suggestions.isEmpty {
                 Menu("Found on this Mac") {
                     ForEach(suggestions.prefix(25), id: \.self) { path in
@@ -225,7 +231,11 @@ struct AddRepoWizard: View {
         panel.prompt = "Choose"
         panel.message = "Choose a git repo"
         NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let picked = panel.runModal() == .OK ? panel.url : nil
+        // The Open dialog (and any permission prompt reading the folder raises) hands focus back
+        // elsewhere: bring Settings and this wizard forward again.
+        defer { DispatchQueue.main.async { WindowFront.raiseSettings() } }
+        guard let url = picked else { return }
         select(url.path)
     }
 

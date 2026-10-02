@@ -241,3 +241,14 @@ private let typical = """
     }
     #expect(hits.isEmpty, "\(hits)")
 }
+
+/// Suggestions must never look inside macOS-protected folders: doing so raises a permission
+/// prompt just to fill a menu (and sends the wizard behind other windows).
+@Test func suggestionsSkipProtectedFolders() throws {
+    let home = try tempDir()
+    for path in ["my-app/.git", "Developer/web/.git", "Documents/secret/.git", "Desktop/x/.git", "Downloads/y/.git", "Developer/notes"] {
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(path), withIntermediateDirectories: true)
+    }
+    let found = RepoSuggestions.find(home: home.path).map { URL(fileURLWithPath: $0).lastPathComponent }
+    #expect(found.sorted() == ["my-app", "web"])
+}
