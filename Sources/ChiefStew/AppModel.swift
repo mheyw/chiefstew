@@ -831,7 +831,8 @@ final class AppModel {
             if self?.repos.isEmpty == true { self?.showAddRepo = true }
             openSettings(.repos)
         }
-        a.openSettings = { openSettings(.notifications) }
+        a.openNotifications = { openSettings(.notifications) }
+        a.openSettings = { openSettings(.general) }
         a.quit = { NSApplication.shared.terminate(nil) }
         return a
     }

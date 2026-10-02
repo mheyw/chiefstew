@@ -14,6 +14,8 @@ public struct PanelActions {
     public var refresh: () -> Void = {}
     public var installUpdate: () -> Void = {}
     public var openRepos: () -> Void = {}
+    public var openNotifications: () -> Void = {}
+    /// Settings → General.
     public var openSettings: () -> Void = {}
     public var quit: () -> Void = {}
 
@@ -126,26 +128,25 @@ public struct PanelView: View {
         }
     }
 
+    /// Icons only, matching the Settings tabs (folder = Repos, bell = Notifications, cog =
+    /// General). Each keeps its name for VoiceOver and as a hover tooltip.
     private var footer: some View {
-        HStack(spacing: 16) {
-            Button {
-                actions.refresh()
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise").labelStyle(.titleAndIcon)
-            }
-            Button("Repos…") { actions.openRepos() }
-            Button("Settings…") { actions.openSettings() }.keyboardShortcut(",")
+        HStack(spacing: 4) {
+            FooterIcon("Refresh", "arrow.clockwise", action: actions.refresh).keyboardShortcut("r")
+            FooterIcon("Repos", "folder", action: actions.openRepos)
+            FooterIcon("Notifications", "bell", action: actions.openNotifications)
+            FooterIcon("Settings", "gearshape", action: actions.openSettings).keyboardShortcut(",")
             if let checked = board.checkedAt, !isEmpty {
                 Text("checked \(Durations.ago(now.timeIntervalSince(checked)))")
+                    .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
+                    .padding(.leading, 6)
             }
             Spacer()
-            Button("Quit") { actions.quit() }.keyboardShortcut("q")
+            FooterIcon("Quit Chief Stew", "power", action: actions.quit).keyboardShortcut("q")
         }
-        .buttonStyle(.plain)
-        .font(.system(size: 12.5))
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
         .background(Color.primary.opacity(0.03))
     }
 
@@ -498,4 +499,36 @@ struct RowDivider: View {
 
 extension View {
     fileprivate func indented() -> some View { padding(.leading, 15) }
+}
+
+/// A footer button that shows only its icon. The name is still there for VoiceOver (it reads
+/// the Label's title), as a tooltip, and for keyboard focus.
+struct FooterIcon: View {
+    var title: String
+    var symbol: String
+    var action: () -> Void
+    @State private var hovering = false
+
+    init(_ title: String, _ symbol: String, action: @escaping () -> Void) {
+        self.title = title
+        self.symbol = symbol
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 13, weight: .regular))
+                .frame(width: 28, height: 24)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(hovering ? 0.08 : 0)))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(title)
+        .accessibilityLabel(title)
+        .onHover { hovering = $0 }
+    }
 }
