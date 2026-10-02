@@ -57,6 +57,14 @@ quit_running() {
   pkill -TERM -a -f "$APP_PROC" || true  # the signal must come first
   for _ in $(seq 1 50); do running || break; sleep 0.1; done
   if running; then
+    # An older copy can ignore the polite quit (e.g. with a sheet open): force it, and clear
+    # its heartbeat so emitters take notifications back straight away.
+    echo "  the running copy didn't quit in 5 s; forcing it"
+    pkill -KILL -a -f "$APP_PROC" || true
+    for _ in $(seq 1 30); do running || break; sleep 0.1; done
+    rm -f "$HOME/Library/Application Support/$NAME/alive"
+  fi
+  if running; then
     echo "✗ the running copy didn't quit; quit it from its panel and re-run"
     return 1
   fi

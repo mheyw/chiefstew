@@ -51,12 +51,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var model: AppModel?
     private var sigterm: DispatchSourceSignal?
 
-    /// `kill` / `pkill` (SIGTERM) quits like the Quit button, so the heartbeat is removed and
-    /// emitters take notifications back at once.
+    /// `kill` / `pkill` (SIGTERM, as the installer sends) quits now: it removes the heartbeat, so
+    /// emitters take notifications back at once, and exits. Not NSApp.terminate, which AppKit
+    /// refuses while a sheet is open (e.g. the Add Repo wizard), leaving an update stuck.
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler { NSApplication.shared.terminate(nil) }
+        source.setEventHandler {
+            MainActor.assumeIsolated { Self.model?.stop() }
+            exit(0)
+        }
         source.resume()
         sigterm = source
     }
