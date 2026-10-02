@@ -19,6 +19,11 @@ struct SettingsView: View {
         }
         .frame(width: 520)
         .padding(20)
+        // Tag the window so it can be found again, and bring it to the front when it opens.
+        .background(WindowAccessor { window in
+            window.identifier = WindowFront.settingsID
+            WindowFront.raise(window)
+        })
     }
 }
 

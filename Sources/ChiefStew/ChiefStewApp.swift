@@ -39,8 +39,9 @@ private struct PanelHost: View {
                 board: model.board(now: context.date), now: context.date, update: model.update,
                 actions: model.actions { tab in
                     model.settingsTab = tab
-                    NSApp.activate()  // an LSUIElement app must come forward for its window
                     openSettings()
+                    // Already open (perhaps behind other apps)? Bring it forward too.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { WindowFront.raiseSettings() }
                 })
         }
         .onAppear { model.panelOpened() }
