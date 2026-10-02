@@ -88,6 +88,8 @@ public struct NeedsItem: Sendable, Equatable, Identifiable {
     public var worktree: String?
     /// The repo's path, for reading an artefact from git.
     public var repoPath: String = ""
+    /// For agent items: the session, for "Go to session".
+    public var session: String?
 
     /// Short text for the menu bar when this is the only item.
     public var menuTitle: String {
@@ -248,7 +250,8 @@ extension Board {
                     NeedsItem(
                         id: "agent-\(agent.session)",
                         kind: .agent(message: n.message, name: agent.displayName),
-                        since: n.since, card: card, repoName: repo.name, worktree: agent.path))
+                        since: n.since, card: card, repoName: repo.name, worktree: agent.path,
+                        session: agent.session))
                 needBuilds.insert(id)
             }
             if !needBuilds.contains(id) { board.inProgress.append(card) }
@@ -260,7 +263,7 @@ extension Board {
                     id: "agent-\(agent.session)",
                     kind: .agent(message: n.message, name: agent.displayName), since: n.since,
                     card: nil, repoName: URL(fileURLWithPath: agent.path).lastPathComponent,
-                    worktree: agent.path))
+                    worktree: agent.path, session: agent.session))
         }
 
         board.needsYou.sort { ($0.since, $0.id) < ($1.since, $1.id) }

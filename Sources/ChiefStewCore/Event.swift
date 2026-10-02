@@ -15,6 +15,10 @@ public struct Event: Sendable, Equatable {
     public var agent: String?
     public var notificationType: String?
     public var message: String?
+    /// The app hosting the agent's session (from `chiefstew hook`): bundle ID, pid, terminal.
+    public var hostApp: String?
+    public var hostPid: Int?
+    public var tty: String?
 
     public init(
         ts: Date, kind: String, repo: String, worktree: String? = nil, build: String? = nil,
@@ -82,12 +86,15 @@ public struct Event: Sendable, Equatable {
         if let g = gate, !isGateName(g) { gate = nil }
         let message = string("message").map { String($0.prefix(maxMessage)) }
 
-        let event = Event(
+        var event = Event(
             ts: string("ts").flatMap(LooseDate.parse) ?? fallbackDate,
             kind: kind, repo: repo, worktree: string("worktree"), build: string("build"),
             slug: string("slug"), lane: string("lane"), phase: phase, gate: gate,
             session: string("session"), agent: string("agent"),
             notificationType: string("notification_type"), message: message)
+        event.hostApp = string("host_app")
+        event.hostPid = json["host_pid"] as? Int
+        event.tty = string("tty")
 
         for field in requirements[kind] ?? [] {
             let present: Bool =

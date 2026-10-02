@@ -6,6 +6,8 @@ public struct PanelActions {
     public var openFile: (String) -> Void = { _ in }
     /// Opens a read-only copy of `ref:path` from the repo at the first argument.
     public var openFromGit: (String, String) -> Void = { _, _ in }
+    /// Brings forward the app running an agent session (falls back to its folder).
+    public var goToSession: (String) -> Void = { _ in }
     public var openFolder: (String) -> Void = { _ in }
     public var openURL: (String) -> Void = { _ in }
     public var copy: (String) -> Void = { _ in }
@@ -321,7 +323,13 @@ struct NeedsRow: View {
                 }
             case .agent(let message, let name):
                 Text("“\(message ?? "\(name) is waiting for your input")”").italic().indented()
-                Actions { worktreeButton(primary: true) }
+                Actions {
+                    if let session = item.session {
+                        Button("Go to session") { actions.goToSession(session) }
+                            .buttonStyle(PillButtonStyle(primary: true))
+                    }
+                    worktreeButton(primary: item.session == nil)
+                }
             case .unmerged:
                 Text("\(item.card?.state ?? "Closed") — not merged yet").indented()
                 Actions { worktreeButton(primary: false) }

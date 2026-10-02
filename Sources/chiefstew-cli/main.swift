@@ -28,6 +28,7 @@
 //
 //   chiefstew version
 
+import AppKit
 import ChiefStewCore
 import Foundation
 
@@ -80,19 +81,60 @@ func hook(_ sub: String?) -> Never {
     {
         exit(0)
     }
-    let cwd = input["cwd"] as? String ?? fm.currentDirectoryPath
+    // The session belongs to the project it was started in (Claude Code sets CLAUDE_PROJECT_DIR
+    // for hooks), not wherever it last cd'd to.
+    let env = ProcessInfo.processInfo.environment
+    let cwd = env["CLAUDE_PROJECT_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? input["cwd"] as? String ?? fm.currentDirectoryPath
     let checkout = Emitter.checkout(of: cwd)
     var event: [String: Any] = [
         "kind": kind, "repo": checkout?.repo ?? PathMatch.normalize(cwd), "session": session,
         "agent": "claude-code",
     ]
     if let c = checkout, c.worktree != c.repo { event["worktree"] = c.worktree }
+    // Which app is running the session (Terminal, iTerm, VS Code…), so "Go to session" can
+    // bring it forward.
+    let host = HostApp.find()
+    if let h = host.app {
+        event["host_app"] = h.bundleID
+        event["host_pid"] = Int(h.pid)
+    }
+    if let tty = host.tty { event["tty"] = tty }
     if sub == "notify" {
         if let m = input["message"] as? String { event["message"] = m }
         if let t = input["notification_type"] as? String { event["notification_type"] = t }
     }
     Emitter.emit(event, paths: paths)
     exit(0)
+}
+
+/// Walks up from this hook process to the GUI app hosting the agent (and the terminal device).
+enum HostApp {
+    static func find() -> (app: (pid: pid_t, bundleID: String)?, tty: String?) {
+        var pid = getppid()
+        var tty: String?
+        for _ in 0..<24 {
+            guard pid > 1, let info = proc(pid) else { break }
+            if tty == nil, info.kp_eproc.e_tdev != -1, let name = devname(info.kp_eproc.e_tdev, S_IFCHR) {
+                tty = String(cString: name)
+            }
+            if let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular,
+                let bundle = app.bundleIdentifier
+            {
+                return ((pid, bundle), tty)
+            }
+            pid = info.kp_eproc.e_ppid
+        }
+        return (nil, tty)
+    }
+
+    private static func proc(_ pid: pid_t) -> kinfo_proc? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        return info
+    }
 }
 
 func emit(_ rest: [String]) -> Never {

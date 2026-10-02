@@ -87,6 +87,7 @@ Flags: `--build`, `--gate`, `--phase`, `--slug`, `--lane`, `--message`, `--sessi
 | `session` | string | per kind | The agent's session ID (Claude Code's `session_id`). |
 | `agent` | string | no | `claude-code`, `codex`, … Shown as "Claude", "Codex", or the name capitalised. |
 | `notification_type` | string | no | Passed through from Claude Code's Notification hook when present. |
+| `host_app`, `host_pid`, `tty` | string, int, string | no | The app running the agent's session (e.g. `com.mitchellh.ghostty`), its process ID and the terminal device. `chiefstew hook` records them by walking up from the hook's process; **Go to session** uses them to bring that app forward. |
 | `message` | string | no | At most 200 characters. |
 
 Unknown fields are ignored.
@@ -105,6 +106,8 @@ Unknown fields are ignored.
 | `agent.resumed` | `session` | Claude Code **UserPromptSubmit** hook | Clears needs-input |
 | `agent.active` | `session` | Claude Code **PostToolUse** hook, **only while `waiting/<session>` exists** | Clears needs-input: a tool ran, so a permission prompt was answered |
 | `agent.ended` | `session` | Claude Code **SessionEnd** hook | Forgets the session, so a closed tab no longer "needs you" |
+
+A session's `repo` is the project it was started in (Claude Code's `CLAUDE_PROJECT_DIR`), not wherever it last changed directory to.
 
 Chief Stew installs the five Claude Code hooks itself, into `~/.claude/settings.json`, so they cover every repo. A repo doesn't need to add them. Each hook runs `chiefstew hook notify|stop|prompt|active|end`, prints nothing, always exits 0, and does nothing if Chief Stew is gone. A repo that also emits agent events from its own hooks is fine: a second copy of the same event from the same session within 3 s is ignored.
 

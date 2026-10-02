@@ -11,6 +11,10 @@ public struct AgentState: Codable, Sendable, Equatable {
     public var needsInput: NeedsInput?
     /// The event's `agent` (`claude-code`, `codex`, …), if it said.
     public var agent: String?
+    /// The app hosting the session, for "Go to session".
+    public var hostApp: String?
+    public var hostPid: Int?
+    public var tty: String?
 
     /// "Claude", "Codex", or "Agent".
     public var displayName: String { AgentState.displayName(agent) }
@@ -66,6 +70,9 @@ public struct AgentTracker: Codable, Sendable, Equatable {
         s.lastEventAt = e.ts
         s.lastKind = e.kind
         if let agent = e.agent { s.agent = agent }
+        if let h = e.hostApp { s.hostApp = h }
+        if let p = e.hostPid { s.hostPid = p }
+        if let t = e.tty { s.tty = t }
         sessions[session] = s
     }
 

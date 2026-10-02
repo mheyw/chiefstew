@@ -121,6 +121,9 @@ final class AppModel {
             if id == Self.updateNoticeID {
                 if case .available = self.update { self.installUpdate() }
                 if case .failed = self.update { self.installUpdate() }
+            } else if id.hasPrefix("agent-"), let at = id.lastIndex(of: "@") {
+                // "agent-<session>@<since>": take you to that session.
+                self.goToSession(String(id[id.index(id.startIndex, offsetBy: 6)..<at]))
             } else if let target {
                 self.open(target)
             }
@@ -612,6 +615,23 @@ final class AppModel {
         }
     }
 
+    /// Brings forward the app running an agent's session (Terminal, iTerm, VS Code…), as recorded
+    /// by `chiefstew hook`. Falls back to opening the session's folder.
+    func goToSession(_ session: String) {
+        guard let s = tracker.sessions[session] else { return }
+        if let pid = s.hostPid, let app = NSRunningApplication(processIdentifier: pid_t(pid)),
+            s.hostApp == nil || app.bundleIdentifier == s.hostApp
+        {
+            app.activate()
+            return
+        }
+        if let bundle = s.hostApp, let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
+            app.activate()
+            return
+        }
+        WorktreeApps.open(s.path, with: settings.worktreeApp)
+    }
+
     /// A file that's only in git (`ref:path`, the build isn't checked out): read it with
     /// `git show` (read-only), save a read-only copy in the cache folder, and open that.
     func openFromGit(repo: String, spec: String) async {
@@ -662,6 +682,7 @@ final class AppModel {
         var a = PanelActions()
         a.openFile = { [weak self] in self?.openFile($0) }
         a.openFromGit = { [weak self] repo, spec in Task { await self?.openFromGit(repo: repo, spec: spec) } }
+        a.goToSession = { [weak self] in self?.goToSession($0) }
         a.openFolder = { [weak self] in WorktreeApps.open($0, with: self?.settings.worktreeApp) }
         a.openURL = { if let url = URL(string: $0) { NSWorkspace.shared.open(url) } }
         a.copy = {
