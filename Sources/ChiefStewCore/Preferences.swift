@@ -13,11 +13,16 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var worktreeApp: String?
     /// Overrides the login-shell lookup for `node`.
     public var nodePath: String?
+    /// What to update to: tagged releases (the team default) or the latest `main` (developers).
+    public var updateChannel: UpdateChannel = .releases
+    /// What to do when an update is available.
+    public var updateMode: UpdateMode = .automatic
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case notifyGates, notifyAgents, notifyUnmerged, reminderMinutes, worktreeApp, nodePath
+        case updateChannel, updateMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -31,7 +36,20 @@ public struct Preferences: Codable, Equatable, Sendable {
             (try? c.decodeIfPresent(Int.self, forKey: .reminderMinutes)) ?? nil ?? d.reminderMinutes
         worktreeApp = (try? c.decodeIfPresent(String.self, forKey: .worktreeApp)) ?? nil
         nodePath = (try? c.decodeIfPresent(String.self, forKey: .nodePath)) ?? nil
+        updateChannel = (try? c.decodeIfPresent(UpdateChannel.self, forKey: .updateChannel)) ?? nil ?? d.updateChannel
+        updateMode = (try? c.decodeIfPresent(UpdateMode.self, forKey: .updateMode)) ?? nil ?? d.updateMode
     }
 
     public static let reminderChoices = [0, 15, 30, 60, 120]
+}
+
+public enum UpdateChannel: String, Codable, Sendable, CaseIterable {
+    /// Tagged releases (`v0.3.0`), fetched from GitHub. What teammates get.
+    case releases
+    /// Whatever is on `main` in the local clone: for whoever develops Chief Stew.
+    case main
+}
+
+public enum UpdateMode: String, Codable, Sendable, CaseIterable {
+    case automatic, ask, off
 }

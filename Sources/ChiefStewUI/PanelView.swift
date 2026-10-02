@@ -22,7 +22,8 @@ public struct PanelActions {
 
 /// The "a newer Chief Stew is available" line at the top of the panel.
 public enum UpdateBanner: Equatable, Sendable {
-    case available(newCommits: Int?)
+    /// `label`: "v0.3.0" or "3 new commits".
+    case available(label: String?)
     case installing
     case failed(log: String)
 }
@@ -68,10 +69,9 @@ public struct PanelView: View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.down.circle").foregroundStyle(Color.accentColor)
             switch update {
-            case .available(let n):
+            case .available(let label):
                 Text("Update available")
-                    + Text(n.map { " · \($0) new commit\($0 == 1 ? "" : "s")" } ?? "")
-                        .foregroundColor(.secondary)
+                    + Text(label.map { " · \($0)" } ?? "").foregroundColor(.secondary)
                 Spacer()
                 Button("Install update") { actions.installUpdate() }
                     .buttonStyle(PillButtonStyle(primary: true))

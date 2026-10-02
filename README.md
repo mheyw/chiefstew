@@ -8,20 +8,40 @@ A macOS menu-bar app that shows, live, what your coding agents and builds are do
 
 ## Install
 
+You need macOS 14+ and Apple's Command Line Tools (`xcode-select --install`, about 5 minutes; Xcode works too). Then:
+
 ```sh
-git clone <this repo> ~/Developer/chiefstew
+git clone https://github.com/mheyw/chiefstew.git ~/Developer/chiefstew
 cd ~/Developer/chiefstew
 ./build.sh install
 ```
 
-This needs Xcode or the Command Line Tools. It builds a release copy, installs it to `/Applications/Chief Stew.app` and opens it. Then:
+Chief Stew is built on your Mac, so there's no Apple account or notarization involved and no Gatekeeper warnings. It installs to `/Applications/Chief Stew.app` and opens. Then:
 
 1. **Allow notifications** when macOS asks.
 2. Click the ferry in the menu bar, then **Add a repo…**. The wizard takes about a minute:
-   - **Choose a repo**, existing or brand new; it just needs to be a git repo.
+   - **Choose a repo** (existing or brand new; it just needs to be a git repo). It's added straight away, and Chief Stew starts showing its agents.
    - **Install hooks:** one click adds Claude Code hooks to `~/.claude/settings.json`, backed up first. Every repo then reports when an agent needs you. No repo changes.
-   - **Build status (optional):** pick your coding agent under **Run setup prompt**. Claude Code, Codex, Gemini and others are found automatically, and **Copy setup prompt** works with anything else. It opens in Terminal in that repo, studies how the repo tracks its work, and describes it in `.chiefstew.json` as data, not code. It checks the result with `chiefstew check` until it's right. The wizard shows the result live, for example "2 builds · phases ✓ · gates ✓ · tasks ✓". With no agent, **Start basic** writes a one-line starter (one build per worktree or branch). Either way the file is left uncommitted for you to review.
-3. In **Settings… → General**, turn on **Launch at login**, and choose the app **Open worktree** should use.
+   - **Build status (optional):** pick your coding agent under **Run setup prompt**. Claude Code, Codex, Gemini and others are found automatically, and **Copy setup prompt** works with anything else. The agent studies how the repo tracks its work and describes it in `.chiefstew.json` (data, not code). If the repo records little, it offers to add a light structure and asks first. The wizard shows the result live. **Start basic** is the no-agent option. Files are left uncommitted for you to review.
+3. In **Settings… → General**, turn on **Launch at login** and choose the app for **Open worktrees in**.
+
+Downloaded a zip instead of cloning? That works too (`./build.sh install` in the unzipped folder). It just can't update itself; clone the repo when you want automatic updates.
+
+## Updates
+
+Chief Stew keeps itself up to date from the git clone you installed from. Every few hours it checks the repo for a newer **release** (a `vX.Y.Z` tag), then builds and installs it in the background while you're not using the panel or Settings. Chief Stew restarts by itself and tells you what changed. If anything fails, the current copy keeps running and the panel offers **Try again** and **Open log**.
+
+- **Settings… → General → Updates:** choose Install automatically (the default), Ask first, or Don't check, and Releases (the default) or Latest main (for whoever develops Chief Stew). **Check now** checks straight away.
+- Checking reads only Chief Stew's own repo on GitHub, using your normal git access. Offline, or without access, it simply doesn't update; nothing else is affected.
+- **By hand:** `./build.sh install` (your checkout) or `./build.sh update v0.3.0` (a release). **Undo:** `./build.sh rollback`.
+
+## For maintainers: releasing
+
+```sh
+./release.sh 0.3.0
+```
+
+This runs the tests, sets `VERSION`, tags `v0.3.0` with the changes since the last release (which teammates see after updating), and pushes. Everyone on the Releases channel has it within a few hours. Push to `main` as often as you like in between: only tagged releases reach the team. GitHub Actions runs the tests on every push.
 
 ## Connect a repo by hand
 
@@ -44,13 +64,6 @@ Everything the wizard does can be done by hand; the contract is [docs/event-cont
   ```
 
 - **Agent hooks:** Settings → General → Claude Code hooks → Install. This covers every repo.
-
-## Update
-
-When `main` in your clone has new commits, the panel shows **Update available** and you get one notification. Click either to build and install the update; Chief Stew restarts when it's done. It always builds a clean export of `main` (`./build.sh update`), never a branch or uncommitted edits you have checked out. If the build fails, the old copy keeps running (or is put back), and the panel shows **Try again** and **Open log** (`~/Library/Logs/Chief Stew/update.log`).
-
-- **By hand:** `./build.sh install`
-- **Undo:** `./build.sh rollback`. The three newest copies are kept in `~/Library/Application Support/Chief Stew/backups/`.
 
 ## Uninstall
 

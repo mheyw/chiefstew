@@ -155,7 +155,7 @@ let outDir: URL = {
 
 @Test @MainActor func updateLineRenders() throws {
     for (name, banner) in [
-        ("available", UpdateBanner.available(newCommits: 3)), ("installing", .installing),
+        ("available", UpdateBanner.available(label: "v0.3.0")), ("installing", .installing),
         ("failed", .failed(log: "/tmp/update.log")),
     ] {
         let image = try #require(render(PanelView(board: states[0].1, now: now, update: banner)))

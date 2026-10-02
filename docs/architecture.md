@@ -1,6 +1,6 @@
 # How Chief Stew works
 
-Chief Stew is a macOS 14+ menu-bar app, written only in Swift and built with SwiftPM (no Xcode project). It **displays** what's in flight in the repos you register, and what needs you. It never runs builds or changes a repo. Everything is local: no network listeners, no telemetry.
+Chief Stew is a macOS 14+ menu-bar app, written only in Swift and built with SwiftPM (no Xcode project). It **displays** what's in flight in the repos you register, and what needs you. It never runs builds or changes a repo. No network listeners and no telemetry. The one network access is checking Chief Stew's own repo for updates.
 
 ```
  your repo                         Chief Stew.app                          you
@@ -30,5 +30,6 @@ Chief Stew is a macOS 14+ menu-bar app, written only in Swift and built with Swi
 - Swift only, with no daemon. A background service (a supervisor that restarts processes, or a reaper that cleans them up) would only be added if real use shows a need.
 - The app never runs cleanup. It shows the commands and copies them.
 - There are no Live Activities, because on macOS they need an iPhone app, a server and a paid developer account.
-- Updates build from your own clone: when `main` moves, the panel offers **Install update**, which runs `./build.sh update` on a clean export of `main`.
+- **Distribution is source-based.** Each Mac builds its own copy (`./build.sh install`), so there's no Apple Developer account, no notarization and no Gatekeeper warnings. That suits a team of developers. A product for non-developers would switch to Developer ID signing, notarization and a download-based updater.
+- **Updates are releases.** `./release.sh X.Y.Z` tags `vX.Y.Z`. Installed copies fetch Chief Stew's own repo every few hours (its only network access; watched repos are never fetched), then build and install the newest release tag while you're not using the app. Updates are a progressive enhancement: a copy built from a zip, or without repo access, works fully and just doesn't update.
 

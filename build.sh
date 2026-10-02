@@ -4,8 +4,9 @@
 #   ./build.sh           release build → build/Chief Stew.app
 #   ./build.sh debug     debug build   → build/Chief Stew.app
 #   ./build.sh install   release build of this checkout, installed into /Applications
-#   ./build.sh update    release build of a clean export of main, installed (the app's
-#                        "Install update" runs this; it never builds a branch or uncommitted edits)
+#   ./build.sh update [ref]  release build of a clean export of a ref (default: main; the app
+#                        passes a release tag like v0.3.0), installed. It never builds whatever
+#                        branch or uncommitted edits happen to be checked out.
 #   ./build.sh rollback  put the newest backup back into /Applications
 #
 # Installing stages the new copy and verifies it before quitting the running one; if anything
@@ -22,7 +23,8 @@ cd "$(dirname "$0")"
 NAME="Chief Stew"
 EXEC="ChiefStew"
 BUNDLE_ID="${CHIEFSTEW_BUNDLE_ID:-com.mheyw.chiefstew}"
-VERSION="0.0.1"
+VERSION="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+VERSION="${VERSION:-0.0.0}"
 APP="build/$NAME.app"
 DEST="/Applications/$NAME.app"
 BACKUPS="$HOME/Library/Application Support/$NAME/backups"
@@ -130,15 +132,16 @@ case "$MODE" in
     exit 0
     ;;
   update)
-    git rev-parse --verify --quiet refs/heads/main >/dev/null || { echo "✗ no main branch"; exit 1; }
+    REF="${2:-refs/heads/main}"
+    git rev-parse --verify --quiet "$REF^{commit}" >/dev/null || { echo "✗ no such ref: $REF"; exit 1; }
     tmp="$(mktemp -d /tmp/chiefstew-update.XXXXXX)"
     trap 'rm -rf "$tmp"' EXIT
-    git archive refs/heads/main | tar -x -C "$tmp"
+    git archive "$REF" | tar -x -C "$tmp"
     mkdir -p "$HOME/Library/Caches/$NAME/build"
-    echo "  building main $(git rev-parse --short refs/heads/main) from a clean export"
+    echo "  building $REF ($(git rev-parse --short "$REF^{commit}")) from a clean export"
     CHIEFSTEW_SOURCE_DIR="$PWD" \
-      CHIEFSTEW_SOURCE_COMMIT="$(git rev-parse refs/heads/main)" \
-      CHIEFSTEW_BUILD_NUMBER="$(git rev-list --count refs/heads/main)" \
+      CHIEFSTEW_SOURCE_COMMIT="$(git rev-parse "$REF^{commit}")" \
+      CHIEFSTEW_BUILD_NUMBER="$(git rev-list --count "$REF")" \
       CHIEFSTEW_SCRATCH="$HOME/Library/Caches/$NAME/build" \
       bash "$tmp/build.sh" install
     exit 0
@@ -148,6 +151,12 @@ case "$MODE" in
   *) echo "usage: ./build.sh [release|debug|install|update|rollback]"; exit 2 ;;
 esac
 
+if ! xcrun --find swift >/dev/null 2>&1; then
+  echo "✗ Swift isn't installed. Install Apple's Command Line Tools (about 5 minutes):"
+  echo "    xcode-select --install"
+  echo "  then run this again."
+  exit 1
+fi
 swift build -c "$CONFIG" --product "$EXEC" --scratch-path "$SCRATCH"
 swift build -c "$CONFIG" --product chiefstew-cli --scratch-path "$SCRATCH"
 BINDIR="$(swift build -c "$CONFIG" --scratch-path "$SCRATCH" --show-bin-path)"

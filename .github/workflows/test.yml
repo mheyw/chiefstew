@@ -1,0 +1,19 @@
+# Runs the tests on every push and pull request, so a broken change can't become a release.
+name: test
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Test
+        run: swift test
+      - name: Build the app
+        run: ./build.sh

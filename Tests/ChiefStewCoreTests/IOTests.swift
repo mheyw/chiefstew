@@ -387,3 +387,41 @@ private func git(_ dir: URL, _ args: String...) throws -> String {
     #expect(prompt.contains(".chiefstew.json"))
     #expect(prompt.contains("'/Applications/Chief Stew.app/Contents/Helpers/chiefstew' check"))
 }
+
+// MARK: - Releases (auto-update for the team)
+
+@Test func semverComparison() {
+    #expect(SourceUpdate.compare("0.10.0", "0.9.2") == 1)
+    #expect(SourceUpdate.compare("1.0.0", "1.0.0") == 0)
+    #expect(SourceUpdate.compare("0.1.0", "0.2.0") == -1)
+    #expect(SourceUpdate.parse("1.2") == nil)
+}
+
+@Test func releasesComeFromTagsFetchedFromOrigin() async throws {
+    let root = try tempDir()
+    let origin = root.appendingPathComponent("origin")
+    let clone = root.appendingPathComponent("clone")
+    try FileManager.default.createDirectory(at: origin, withIntermediateDirectories: true)
+    _ = try git(origin, "init", "-q", "-b", "main")
+    _ = try git(origin, "commit", "-q", "--allow-empty", "-m", "one")
+    _ = try git(origin, "tag", "-a", "v0.9.2", "-m", "Chief Stew v0.9.2", "-m", "- older")
+    _ = try git(root, "clone", "-q", origin.path, clone.path)
+
+    #expect(SourceUpdate.isClone(clone.path))
+    #expect(await SourceUpdate.latestRelease(sourceDir: clone.path)?.tag == "v0.9.2")
+
+    // A new release appears on origin; fetching brings it in, and 0.10.0 beats 0.9.2.
+    _ = try git(origin, "commit", "-q", "--allow-empty", "-m", "two")
+    _ = try git(origin, "tag", "-a", "v0.10.0", "-m", "Chief Stew v0.10.0", "-m", "- Settings opens in front\n- Faster checks")
+    #expect(await SourceUpdate.fetch(sourceDir: clone.path))
+    let latest = try #require(await SourceUpdate.latestRelease(sourceDir: clone.path))
+    #expect(latest.tag == "v0.10.0" && latest.version == "0.10.0")
+    #expect(latest.notes.contains("Settings opens in front"))
+}
+
+@Test func aDownloadedCopyCantUpdateAndThatsFine() async throws {
+    let dir = try tempDir()  // no .git: like a copy built from a zip
+    #expect(!SourceUpdate.isClone(dir.path))
+    #expect(await SourceUpdate.fetch(sourceDir: dir.path) == false)
+    #expect(await SourceUpdate.latestRelease(sourceDir: dir.path) == nil)
+}

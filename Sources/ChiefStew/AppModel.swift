@@ -140,6 +140,7 @@ final class AppModel {
         loops.append(
             Task { [weak self] in
                 await self?.notifier.requestPermission()
+                self?.announceUpdateIfNew()
                 while !Task.isCancelled {
                     guard let self else { return }
                     self.tick = Date()
@@ -204,34 +205,122 @@ final class AppModel {
         return (dir, commit)
     }
 
+    /// What an available update would install: a release tag, or main.
+    struct UpdateTarget: Equatable {
+        var ref: String
+        var label: String?
+        var notes: String?
+        var id: String
+    }
+
+    @ObservationIgnored private var updateTarget: UpdateTarget?
+    private(set) var lastUpdateFetch: (at: Date, ok: Bool)?
+    var panelOpen = false {
+        didSet { if !panelOpen { installIfAutomatic() } }
+    }
+
+    var installedVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+
+    /// Updates are a progressive enhancement: only a copy built from a git clone of the repo
+    /// can update itself. Nil when this copy can't (a dev run, or built from a downloaded zip).
+    var updatesPossible: Bool { source.map { SourceUpdate.isClone($0.dir) } ?? false }
+
+    /// One line for Settings → Updates.
+    var updateStatus: String {
+        guard source != nil else { return "This copy isn't installed in /Applications, so it doesn't update itself." }
+        guard updatesPossible else {
+            return "Installed from a download, so it can't update itself. For automatic updates, install from a git clone of the Chief Stew repo (see its README)."
+        }
+        if settings.updateMode == .off { return "Updates are off. You're on v\(installedVersion)." }
+        if let t = updateTarget, case .available = update { return "\(t.label ?? "An update") is available." }
+        if settings.updateChannel == .releases, let f = lastUpdateFetch, !f.ok {
+            return "Couldn't reach GitHub (checked \(Durations.ago(Date().timeIntervalSince(f.at)))). Updates resume when it can."
+        }
+        let checked = lastUpdateCheck == .distantPast ? "" : ", checked \(Durations.ago(Date().timeIntervalSince(lastUpdateCheck)))"
+        return "Up to date: v\(installedVersion)\(checked)."
+    }
+
     func checkForUpdate(force: Bool = false) async {
-        guard let source, update != .installing else { return }
+        guard let source, update != .installing, updatesPossible else { return }
+        guard settings.updateMode != .off || force else {
+            update = nil
+            return
+        }
+        // Releases mean a fetch from GitHub: every 4 hours (30 minutes when asked). Main is local.
+        let interval: TimeInterval = settings.updateChannel == .releases ? (force ? 30 * 60 : 4 * 3600) : (force ? 30 : Self.updateCheckInterval)
         let now = Date()
-        guard force ? now.timeIntervalSince(lastUpdateCheck) > 30
-            : now.timeIntervalSince(lastUpdateCheck) > Self.updateCheckInterval
-        else { return }
+        guard now.timeIntervalSince(lastUpdateCheck) > interval || (force && lastUpdateCheck == .distantPast) else { return }
         lastUpdateCheck = now
-        guard let available = await SourceUpdate.check(
-            sourceDir: source.dir, installedCommit: source.commit)
-        else {
+
+        var target: UpdateTarget?
+        switch settings.updateChannel {
+        case .releases:
+            let ok = await SourceUpdate.fetch(sourceDir: source.dir, path: login?.path ?? "/usr/bin:/bin")
+            lastUpdateFetch = (Date(), ok)
+            if let rel = await SourceUpdate.latestRelease(sourceDir: source.dir),
+                SourceUpdate.compare(rel.version, installedVersion) > 0
+            {
+                target = UpdateTarget(ref: rel.tag, label: rel.tag, notes: rel.notes, id: rel.tag)
+            }
+        case .main:
+            if let a = await SourceUpdate.check(sourceDir: source.dir, installedCommit: source.commit) {
+                let label = a.newCommits.map { "\($0) new commit\($0 == 1 ? "" : "s")" }
+                target = UpdateTarget(ref: "refs/heads/main", label: label, notes: nil, id: a.latest)
+            }
+        }
+        guard let target else {
             if case .available = update { update = nil }
+            updateTarget = nil
             notifier.withdraw([Self.updateNoticeID])  // an old "update available" is now wrong
             return
         }
-        if case .failed = update, available.latest == updateLatest { return }  // same build failed
-        update = .available(newCommits: available.newCommits)
-        updateLatest = available.latest
-        let key = "updateNotifiedFor"
-        if permission == .granted, UserDefaults.standard.string(forKey: key) != available.latest {
-            UserDefaults.standard.set(available.latest, forKey: key)
-            let commits = available.newCommits.map { "\($0) new commit\($0 == 1 ? "" : "s")" }
-            notifier.post(
-                Notice(
-                    id: Self.updateNoticeID, title: "Chief Stew update available",
-                    body: [commits, "Click to build and install it."].compactMap { $0 }
-                        .joined(separator: " · "),
-                    open: nil, isReminder: true))
+        if case .failed = update, target.id == updateTarget?.id { return }  // the same build failed
+        updateTarget = target
+        update = .available(label: target.label)
+
+        if settings.updateMode == .automatic {
+            installIfAutomatic()
+        } else {
+            let key = "updateNotifiedFor"
+            if permission == .granted, UserDefaults.standard.string(forKey: key) != target.id {
+                UserDefaults.standard.set(target.id, forKey: key)
+                notifier.post(
+                    Notice(
+                        id: Self.updateNoticeID, title: "Chief Stew \(target.label ?? "update") is available",
+                        body: "Click to install it.", open: nil, isReminder: true))
+            }
         }
+    }
+
+    /// Automatic mode installs only while you're not using Chief Stew (panel and Settings
+    /// closed), so it never restarts under you.
+    func installIfAutomatic() {
+        guard settings.updateMode == .automatic, case .available = update, !panelOpen,
+            !(NSApp.windows.contains { $0.identifier == WindowFront.settingsID && $0.isVisible })
+        else { return }
+        installUpdate()
+    }
+
+    /// After an update, the new copy says so once, with the release notes.
+    func announceUpdateIfNew() {
+        let d = UserDefaults.standard
+        let now = "\(installedVersion) \(source?.commit ?? "")"
+        defer { d.set(now, forKey: "lastRunBuild") }
+        guard let before = d.string(forKey: "lastRunBuild"), before != now,
+            let pending = d.string(forKey: "pendingUpdateLabel")
+        else { return }
+        let notes = d.string(forKey: "pendingUpdateNotes") ?? ""
+        d.removeObject(forKey: "pendingUpdateLabel")
+        d.removeObject(forKey: "pendingUpdateNotes")
+        guard permission == .granted else { return }
+        let summary = notes.split(separator: "\n").prefix(3).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "- ")) }
+            .joined(separator: " · ")
+        notifier.post(
+            Notice(
+                id: "chiefstew-updated", title: "Chief Stew updated to \(pending)",
+                body: summary.isEmpty ? "You're on v\(installedVersion)." : summary, open: nil, isReminder: false))
     }
 
     /// Runs `build.sh install` from the source folder, detached: it quits this copy, swaps in
@@ -258,12 +347,15 @@ final class AppModel {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        // `update` builds a clean export of main, not whatever is checked out in the source
-        // folder (review: updater-installs-working-tree-not-main).
-        process.arguments = [(source.dir as NSString).appendingPathComponent("build.sh"), "update"]
+        // `update` builds a clean export of the release tag (or main), never whatever is checked
+        // out in the source folder.
+        let target = updateTarget ?? UpdateTarget(ref: "refs/heads/main", label: nil, notes: nil, id: "")
+        process.arguments = [(source.dir as NSString).appendingPathComponent("build.sh"), "update", target.ref]
+        UserDefaults.standard.set(target.label ?? "the latest version", forKey: "pendingUpdateLabel")
+        UserDefaults.standard.set(target.notes ?? "", forKey: "pendingUpdateNotes")
         process.currentDirectoryURL = URL(fileURLWithPath: source.dir)
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = (login?.path).map { "\($0):/usr/bin:/bin:/usr/sbin:/sbin" } ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = env
         process.standardOutput = logHandle
         process.standardError = logHandle

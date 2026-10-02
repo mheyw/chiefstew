@@ -14,4 +14,4 @@ Rules:
 - Local only: no network listeners, no telemetry.
 - Don't re-open the decisions in `docs/architecture.md` without a new reason.
 
-Build `./build.sh` · install `./build.sh install` · test `swift test` · demo `dev/demo.sh needs`. The installed app offers updates when `main` moves on. Notifications can't be tested from inside Claude Code's command sandbox, so run those checks with the sandbox off.
+Build `./build.sh` · install `./build.sh install` · test `swift test` · demo `dev/demo.sh needs` · release to the team `./release.sh X.Y.Z` (tags vX.Y.Z; teammates auto-update to the newest release tag; CI runs the tests on every push). Chief Stew's only network access is fetching its own repo for updates, and updates are a progressive enhancement: a copy built from a zip works fully but doesn't update. Notifications can't be tested from inside Claude Code's command sandbox, so run those checks with the sandbox off.

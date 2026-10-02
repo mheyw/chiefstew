@@ -44,7 +44,11 @@ private struct PanelHost: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { WindowFront.raiseSettings() }
                 })
         }
-        .onAppear { model.panelOpened() }
+        .onAppear {
+            model.panelOpen = true
+            model.panelOpened()
+        }
+        .onDisappear { model.panelOpen = false }
     }
 }
 

@@ -24,6 +24,8 @@ struct SettingsView: View {
             window.identifier = WindowFront.settingsID
             WindowFront.raise(window)
         })
+        // An automatic update waits while Settings is open; closing it lets it go ahead.
+        .onDisappear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.installIfAutomatic() } }
     }
 }
 
@@ -167,6 +169,27 @@ private struct GeneralPane: View {
                 }
                 if let launchError {
                     Text(launchError).font(.callout).foregroundStyle(.red)
+                }
+            }
+            Section("Updates") {
+                Text(model.updateStatus).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.updatesPossible {
+                    Picker("When an update is available", selection: $model.settings.updateMode) {
+                        Text("Install automatically").tag(UpdateMode.automatic)
+                        Text("Ask first").tag(UpdateMode.ask)
+                        Text("Don't check").tag(UpdateMode.off)
+                    }
+                    Picker("Update to", selection: $model.settings.updateChannel) {
+                        Text("Releases").tag(UpdateChannel.releases)
+                        Text("Latest main (for developing Chief Stew)").tag(UpdateChannel.main)
+                    }
+                    HStack {
+                        Text("Installs happen while the panel and Settings are closed, and Chief Stew restarts by itself.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Check now") { Task { await model.checkForUpdate(force: true) } }
+                    }
                 }
             }
             Section("Claude Code hooks") {
