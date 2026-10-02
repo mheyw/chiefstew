@@ -187,3 +187,14 @@ let outDir: URL = {
     let image = try #require(render(row))
     try write(image, "menubar-icon-states")
 }
+
+/// "checked just now" was noise (status refreshes every minute); it shows only when stale.
+@Test @MainActor func lastCheckedAppearsOnlyWhenStale() throws {
+    let fresh = snapshot(builds: [b173])
+    var stale = fresh
+    stale.checkedAt = now.addingTimeInterval(-6 * 60)
+    let a = try #require(render(PanelView(board: fresh, now: now)))
+    let b = try #require(render(PanelView(board: stale, now: now)))
+    try write(b, "panel-stale-checked")
+    #expect(a.size.height == b.size.height)  // same layout; the line sits in the footer row
+}

@@ -32,6 +32,8 @@ public enum UpdateBanner: Equatable, Sendable {
 
 public struct PanelView: View {
     public static let width: CGFloat = 452
+    /// Status older than this is worth mentioning (it's normally refreshed every minute).
+    static let staleAfter: TimeInterval = 3 * 60
 
     var board: Board
     var now: Date
@@ -136,8 +138,10 @@ public struct PanelView: View {
             FooterIcon("Repos", "folder", action: actions.openRepos)
             FooterIcon("Notifications", "bell", action: actions.openNotifications)
             FooterIcon("Settings", "gearshape", action: actions.openSettings).keyboardShortcut(",")
-            if let checked = board.checkedAt, !isEmpty {
-                Text("checked \(Durations.ago(now.timeIntervalSince(checked)))")
+            // Only when it means something: status is normally re-read every minute and when the
+            // panel opens, so "just now" would be noise. Shown when it's gone stale (asleep, say).
+            if let checked = board.checkedAt, now.timeIntervalSince(checked) > Self.staleAfter {
+                Text("Last checked \(Durations.ago(now.timeIntervalSince(checked)))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 6)
@@ -165,8 +169,8 @@ public struct PanelView: View {
                     .foregroundStyle(.secondary)
                     + Text(board.repoNames.joined(separator: ", ")).bold()
                     + Text(".").foregroundStyle(.secondary)
-                if let checked = board.checkedAt {
-                    Text("Checked \(Durations.ago(now.timeIntervalSince(checked))).")
+                if let checked = board.checkedAt, now.timeIntervalSince(checked) > Self.staleAfter {
+                    Text("Last checked \(Durations.ago(now.timeIntervalSince(checked))).")
                         .foregroundStyle(.secondary)
                 }
             }
