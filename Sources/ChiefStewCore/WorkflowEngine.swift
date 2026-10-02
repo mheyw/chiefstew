@@ -201,14 +201,22 @@ public struct WorkflowEngine: Sendable {
                         num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch, ref: branch,
                         worktree: byBranch[branch]))
             }
-            // Builds that only exist on origin (another machine, a teammate): opt-in, never fetched.
-            if spec.includeRemote {
+            // Builds that only exist on origin (another machine, a teammate). Never fetched. By
+            // default only recently active ones, so old abandoned branches don't pile up.
+            if spec.includeRemote != false {
                 let local = Set(git.branches())
                 for branch in git.remoteBranches() where !local.contains(branch) && branch != main {
                     guard let g = Self.groups(re, branch) else { continue }
                     if git.isMerged("origin/\(branch)", into: main) {
                         skipped.append("origin/\(branch): already merged into \(main)")
                         continue
+                    }
+                    if spec.includeRemote == nil, let last = git.lastCommit("origin/\(branch)")?.date {
+                        let days = Int(Date().timeIntervalSince(last) / 86400)
+                        if days > WorkflowSpec.recentRemoteDays {
+                            skipped.append("origin/\(branch): only on origin, no commits for \(days) days (\"remote\": true includes it)")
+                            continue
+                        }
                     }
                     out.append(
                         Candidate(

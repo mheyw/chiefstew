@@ -44,9 +44,9 @@ public enum SetupPrompt {
                - So it stays accurate, add a short section to the repo's agent instructions (`AGENTS.md` or `CLAUDE.md`; create `AGENTS.md` if there's neither). Tell agents to create the file when starting a build, update the state line as work moves, set the sign-off line to waiting when they need the owner, and tick tasks as they finish them. Keep it to a few lines, in the repo's own voice.
                - Leave everything uncommitted for review.
 
-            3. **Write `.chiefstew.json`** at the repo root, as JSON5 (comments welcome). Put a `"workflow"` in it, as described in "The workflow format" below. Describe only what the repo really records, including any structure you added in step 2.
+            3. **Write `.chiefstew.json`** at the repo root, as JSON5 (comments welcome). Put a `"workflow"` in it, as described in "The workflow format" below. Describe only what the repo really records, including any structure you added in step 2. Leave out anything the defaults already handle well.
 
-            4. **Check it:** run `\(cs) check` in the repo. It prints every build it found, what it skipped and why, and for each field what matched and why anything didn't. Fix the description and run it again until it's right. `\(cs) status` prints the exact JSON Chief Stew will show. If nothing is in flight right now, `check` still confirms the description is valid. To see the rules work on real data, try them on a branch you create in a scratch clone, then delete the clone.
+            4. **Check it:** run `\(cs) check` in the repo. It prints every build it found, what it skipped and why, and for each field what matched and why anything didn't. Fix the description and run it again until it's right. **Read the skipped list too:** if it skipped something that's real work in flight, adjust the description so it's included (the reason says how). `\(cs) status` prints the exact JSON Chief Stew will show. If nothing is in flight right now, `check` still confirms the description is valid. To see the rules work on real data, try them on a branch you create in a scratch clone, then delete the clone.
 
             5. Only fall back to a `"status"` command (a program printing § 4 of the contract) if the process truly can't be described, and say why.
 
@@ -56,7 +56,6 @@ public enum SetupPrompt {
             - Phases, gates and tasks are usually markdown: checkbox lines (`- [x] Design`) or lines like `Review: waiting`. Use `"list": "checkboxes"` for the first and a regular expression with named groups for the second. Group names: `n`, `name`, `done`, `started`, `doneAt` for phases; `gate`, `status`, `at` for gates.
             - `artefact` is the file a reviewer opens at a gate. `approve` is the exact command that signs a gate off, if the repo has one. Chief Stew copies it and never runs it.
             - `parked` (set aside) and `closed` (finished, waiting to merge) are regular expressions on the state line.
-            - If builds can exist only on the remote (pushed from another machine or by a teammate), add `"remote": true` to `builds`.
 
             ---
 

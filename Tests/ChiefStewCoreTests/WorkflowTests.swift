@@ -255,7 +255,7 @@ private let typical = """
 
 // MARK: - Builds the first version missed (found when a real repo was set up)
 
-@Test func remoteOnlyBuildsAreOptIn() throws {
+@Test func recentRemoteOnlyBuildsCountByDefault() throws {
     let (repo, _) = try sampleRepo()
     let origin = repo.deletingLastPathComponent().appendingPathComponent("origin.git")
     try run(repo.deletingLastPathComponent(), "init", "-q", "--bare", origin.path)
@@ -266,11 +266,11 @@ private let typical = """
     try run(repo, "checkout", "-q", "main")
     try run(repo, "branch", "-q", "-D", "feature/r")  // only origin/feature/r is left
 
-    let local = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}"]]).get()
-    #expect(!WorkflowEngine(repo: repo.path, spec: local).run().report.builds.map(\.slug).contains("r"))
-    let remote = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}", "remote": true]]).get()
-    let rows = WorkflowEngine(repo: repo.path, spec: remote).run().report.builds
-    #expect(rows.contains { $0.slug == "r" && $0.worktree == nil })
+    // By default a recently active remote-only build counts, with no setting needed.
+    let auto = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}"]]).get()
+    #expect(WorkflowEngine(repo: repo.path, spec: auto).run().report.builds.contains { $0.slug == "r" && $0.worktree == nil })
+    let off = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}", "remote": false]]).get()
+    #expect(!WorkflowEngine(repo: repo.path, spec: off).run().report.builds.map(\.slug).contains("r"))
 }
 
 @Test func anAgentWorktreeOnAnotherBranchCountsForItsBuild() throws {
@@ -307,4 +307,30 @@ private let typical = """
     let gate = try #require(c.gates.first)
     #expect(gate.artefact == nil)
     #expect(gate.artefactRef == "feature/c:docs/features/c/PR.md")
+}
+
+@Test func oldRemoteOnlyBuildsAreSkippedByDefaultWithAReason() throws {
+    let (repo, _) = try sampleRepo()
+    let origin = repo.deletingLastPathComponent().appendingPathComponent("origin.git")
+    try run(repo.deletingLastPathComponent(), "init", "-q", "--bare", origin.path)
+    try run(repo, "remote", "add", "origin", origin.path)
+    try run(repo, "checkout", "-q", "-b", "feature/old", "main")
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    p.arguments = ["-C", repo.path, "commit", "-q", "--allow-empty", "-m", "old work"]
+    p.environment = [
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+        "GIT_AUTHOR_DATE": "2025-01-01T12:00:00", "GIT_COMMITTER_DATE": "2025-01-01T12:00:00", "HOME": NSTemporaryDirectory(),
+    ]
+    try p.run()
+    p.waitUntilExit()
+    try run(repo, "push", "-q", "origin", "feature/old")
+    try run(repo, "checkout", "-q", "main")
+    try run(repo, "branch", "-q", "-D", "feature/old")
+    let spec = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}"]]).get()
+    let r = WorkflowEngine(repo: repo.path, spec: spec).runExplained()
+    #expect(!r.report.builds.map(\.slug).contains("old"))
+    #expect(r.skipped.contains { $0.hasPrefix("origin/feature/old: only on origin, no commits for") })
+    let all = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}", "remote": true]]).get()
+    #expect(WorkflowEngine(repo: repo.path, spec: all).run().report.builds.map(\.slug).contains("old"))
 }

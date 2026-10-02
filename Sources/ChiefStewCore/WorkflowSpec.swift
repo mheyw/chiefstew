@@ -51,8 +51,12 @@ public struct WorkflowSpec: Sendable, Equatable {
     }
 
     public var builds: Builds
-    /// With `branches`: also count builds that only exist as `origin/…` (already fetched; never fetches).
-    public var includeRemote = false
+    /// With `branches`, builds that only exist as `origin/…` (already fetched; never fetches):
+    /// nil (the default) counts those with a commit in the last 30 days, so work pushed from
+    /// another machine shows up without anyone knowing about this setting; true counts all,
+    /// false none.
+    public var includeRemote: Bool?
+    public static let recentRemoteDays = 30
     public var folder: String?
     public var state: TextRule?
     public var lane: TextRule?
@@ -188,7 +192,7 @@ public struct WorkflowSpec: Sendable, Equatable {
 
         var spec = WorkflowSpec(builds: builds ?? .worktrees)
         spec.folder = folder
-        spec.includeRemote = (object("builds")?["remote"] as? Bool) ?? false
+        spec.includeRemote = object("builds")?["remote"] as? Bool
         spec.state = textRule("state")
         spec.lane = textRule("lane")
         spec.parked = stateRegex("parked")

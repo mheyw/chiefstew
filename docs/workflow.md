@@ -81,7 +81,7 @@ chiefstew status   # the exact JSON Chief Stew will show (contract § 4)
 
 A branch that's merged into the main branch (origin's default, else `main`, else `master`) leaves the list, unless it's still checked out in a worktree. A brand-new branch looks merged to git, so worktrees always count.
 
-With `branches`, add `"remote": true` to also count builds that only exist as `origin/…` (pushed from another machine, or by a teammate). Chief Stew never fetches, so these are as fresh as your last `git fetch`.
+With `branches`, builds that only exist as `origin/…` (pushed from another machine, or by a teammate) count too, if they've had a commit in the last 30 days. `"remote": true` counts all of them, and `"remote": false` none. Chief Stew never fetches, so these are as fresh as your last `git fetch`.
 
 A worktree on a branch that doesn't match the pattern (an agent's worktree branched from a build, say) is attached to the build it's built on, so agents working there count for that build. A build checked out in a worktree is read from disk, so uncommitted edits show; otherwise it's read from git.
 
