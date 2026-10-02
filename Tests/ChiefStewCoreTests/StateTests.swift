@@ -63,7 +63,7 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     let b = try fullBoard()
     #expect(b.needsYou.map(\.menuTitle) == ["172 not merged", "174 Plan gate"])
     #expect(b.inProgress.map(\.num) == ["173", "175"])  // most recent activity first
-    #expect(b.menu == MenuBarState(title: "2 need you", attention: true, warning: false))
+    #expect(b.menu == MenuBarState(title: "2 need you", attention: true, warning: false, busy: true))
     #expect(b.header == "4 builds · 2 need you")
 }
 

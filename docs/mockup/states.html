@@ -94,15 +94,15 @@
   <div class="barrow"><div class="barlabel">Idle</div><div class="menubar"><span class="other">⌁ 􀙇</span>
     <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
   <div class="barrow"><div class="barlabel">In progress</div><div class="menubar"><span class="other">⌁ 􀙇</span>
-    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span class="num">173 Implement 6/11</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
   <div class="barrow"><div class="barlabel">In progress, 2+</div><div class="menubar"><span class="other">⌁ 􀙇</span>
-    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span class="num">173 Implement 6/11 <span style="color:var(--sec)">+1</span></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
   <div class="barrow"><div class="barlabel">Needs you</div><div class="menubar"><span class="other">⌁ 􀙇</span>
-    <span class="item"><span class="ferry attn"><svg><use href="#ferry"/></svg><span class="badge"></span></span><span class="num attn">174 Plan gate</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+    <span class="item"><span class="ferry attn"><svg><use href="#ferry"/></svg><span class="badge"></span></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
   <div class="barrow"><div class="barlabel">Needs you, 2+</div><div class="menubar"><span class="other">⌁ 􀙇</span>
-    <span class="item"><span class="ferry attn"><svg><use href="#ferry"/></svg><span class="badge"></span></span><span class="num attn">2 need you</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+    <span class="item"><span class="ferry attn"><svg><use href="#ferry"/></svg><span class="badge"></span></span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
   <div class="barrow"><div class="barlabel">Left behind</div><div class="menubar"><span class="other">⌁ 􀙇</span>
-    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span style="color:var(--sec);font-size:11px">⚠</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
+    <span class="item"><span class="ferry"><svg><use href="#ferry"/></svg></span><span style="font-size:9px;opacity:.8">⚠</span></span><span class="other">Wed 30 Sep 14:02</span></div></div>
 </div>
 
 <div class="grid">
@@ -223,8 +223,8 @@
 <div class="state"><h2>Decisions shown here <span>— approve or change</span></h2>
 <div class="notes" style="margin-top:0">
 <ol style="margin:0;padding-left:18px">
-  <li><b>Menu-bar text is short</b> (≤ ~20 chars): number, phase, tasks. The 7 dots live in the panel; at menu-bar size they're unreadable and a notched MacBook hides items that don't fit.</li>
-  <li><b>Most relevant build:</b> needs-you first (oldest waiting), else most recent activity. <span class="mono">+1</span> when more builds are in flight. No pinning in v1.</li>
+  <li><b>The menu bar is icon-only</b>: a dot means work in progress, orange means something needs you, a small triangle means something was left behind. Text there gets hidden when the menu bar is full (taking the icon with it); the detail lives in the panel and notifications.</li>
+  <li><b>Order in the panel:</b> needs-you first (oldest waiting), then in progress by most recent activity, parked last.</li>
   <li><b>Needs you</b> = a waiting gate, an agent asking for input, or <i>closed but not merged</i>. Colour: orange icon, badge and text.</li>
   <li><b>Left behind never takes over the menu bar</b>: just a small ⚠ beside the icon. It isn't urgent.</li>
   <li><b>Fast-lane builds show 4 dots</b> (Phases 1, 5, 6, 7); full lane shows 7. The waiting gate's dot is orange.</li>

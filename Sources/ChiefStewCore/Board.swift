@@ -118,12 +118,17 @@ public struct Problem: Sendable, Equatable, Identifiable {
     public var error: RepoError
 }
 
+/// The menu-bar item is an icon only (text there gets hidden by macOS when the menu bar is
+/// full, taking the icon with it). Detail lives in the panel and notifications.
 public struct MenuBarState: Sendable, Equatable {
-    /// Text beside the icon; nil shows the icon alone.
+    /// A short summary ("174 Plan gate", "2 need you"): spoken by VoiceOver, never drawn.
     public var title: String?
+    /// Something needs you: the icon turns orange.
     public var attention: Bool
-    /// Left-behind findings or a repo that can't be read: a small ⚠, never a takeover.
+    /// Left-behind findings or a repo that can't be read: a small triangle on the icon.
     public var warning: Bool
+    /// Work is in flight: a small dot on the icon.
+    public var busy: Bool = false
 }
 
 public struct Board: Sendable, Equatable {
@@ -163,10 +168,10 @@ public struct Board: Sendable, Equatable {
     public var menu: MenuBarState {
         let warning = !leftBehind.isEmpty || !problems.isEmpty
         if needsYou.count == 1 {
-            return .init(title: needsYou[0].menuTitle, attention: true, warning: warning)
+            return .init(title: needsYou[0].menuTitle, attention: true, warning: warning, busy: true)
         }
         if needsYou.count > 1 {
-            return .init(title: "\(needsYou.count) need you", attention: true, warning: warning)
+            return .init(title: "\(needsYou.count) need you", attention: true, warning: warning, busy: true)
         }
         let active = active
         guard let top = active.first else {
@@ -176,7 +181,7 @@ public struct Board: Sendable, Equatable {
         if let label = top.phaseLabel { title += " \(label)" }
         if let t = top.tasks, t.total > 0 { title += " \(t.done)/\(t.total)" }
         if active.count > 1 { title += " +\(active.count - 1)" }
-        return .init(title: title, attention: false, warning: warning)
+        return .init(title: title, attention: false, warning: warning, busy: true)
     }
 }
 

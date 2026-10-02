@@ -163,3 +163,27 @@ let outDir: URL = {
         try write(image, "panel-update-\(name)")
     }
 }
+
+/// Every menu-bar icon state, enlarged, for checking by eye: idle, in progress, needs you, and
+/// each with the warning triangle. All the same width.
+@Test @MainActor func menuBarIconStates() throws {
+    var sizes = Set<CGFloat>()
+    let states: [(String, Bool, Bool, Bool)] = [
+        ("idle", false, false, false), ("busy", false, true, false), ("attention", true, true, false),
+        ("idle-warn", false, false, true), ("busy-warn", false, true, true), ("attention-warn", true, true, true),
+    ]
+    let row = HStack(spacing: 24) {
+        ForEach(states, id: \.0) { s in
+            let img = MenuBarIcon.image(attention: s.1, busy: s.2, warning: s.3)
+            VStack {
+                Image(nsImage: img).resizable().interpolation(.none).frame(width: img.size.width * 8, height: img.size.height * 8)
+                Text(s.0).font(.caption)
+            }
+        }
+    }
+    .padding(20).background(Color(white: 0.93))
+    for s in states { sizes.insert(MenuBarIcon.image(attention: s.1, busy: s.2, warning: s.3).size.width) }
+    #expect(sizes.count == 1)  // fixed width in every state
+    let image = try #require(render(row))
+    try write(image, "menubar-icon-states")
+}
