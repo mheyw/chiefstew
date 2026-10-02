@@ -234,7 +234,8 @@ final class AppModel {
         guard updatesPossible else {
             return "Installed from a download, so it can't update itself. For automatic updates, install from a git clone of the Chief Stew repo (see its README)."
         }
-        if update == .installing { return "Installing \(updateTarget?.label ?? "the update")…" }
+        if checkingNow { return "Checking for updates…" }
+        if update == .installing { return "Installing \(updateTarget?.label ?? "the update")… Chief Stew restarts by itself in about a minute." }
         if settings.updateMode == .off { return "Updates are off. You're on v\(installedVersion)." }
         if let t = updateTarget, case .available = update { return "\(t.label ?? "An update") is available." }
         if settings.updateChannel == .releases, let f = lastUpdateFetch, !f.ok {
@@ -253,8 +254,13 @@ final class AppModel {
         case now
     }
 
+    /// True while a Check now is running, so the click always visibly does something.
+    private(set) var checkingNow = false
+
     func checkForUpdate(_ reason: CheckReason = .background) async {
         guard let source, update != .installing, updatesPossible else { return }
+        if reason == .now { checkingNow = true }
+        defer { if reason == .now { checkingNow = false } }
         guard settings.updateMode != .off || reason == .now else {
             update = nil
             return

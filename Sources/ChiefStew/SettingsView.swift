@@ -188,8 +188,9 @@ private struct GeneralPane: View {
                             : "Checks hourly. An update installs in the background and Chief Stew restarts by itself.")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
+                        if model.checkingNow { ProgressView().controlSize(.small) }
                         Button("Check now") { Task { await model.checkForUpdate(.now) } }
-                            .disabled(model.update == .installing)
+                            .disabled(model.update == .installing || model.checkingNow)
                     }
                 }
             }
