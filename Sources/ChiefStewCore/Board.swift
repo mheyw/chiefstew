@@ -12,6 +12,11 @@ public struct RepoSnapshot: Sendable, Equatable {
     public var sweepError: RepoError?
     /// The repo has no status command: only its agents are watched.
     public var agentsOnly = false
+    /// `.chiefstew.json` has a `roadmap` (contract § 4c), read or not.
+    public var roadmapConfigured = false
+    public var roadmap: Roadmap?
+    /// The roadmap couldn't be read: shown on its own, never in place of status.
+    public var roadmapError: RepoError?
 
     public init(
         path: String, status: StatusReport? = nil, statusAt: Date? = nil,
@@ -84,6 +89,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// Claude Code says a session in this build's checkout is busy. On a parked build it means
     /// the build was picked up again before its Current state line said so.
     public var agentWorking: Bool = false
+    /// The repo it's in, so the window can show it under its repo.
+    public var repoPath: String = ""
 
     /// The row's one status label, next to its name.
     public var tag: String? {
@@ -129,6 +136,7 @@ public struct LeftItem: Sendable, Equatable, Identifiable {
     public var details: [String]
     /// A command the owner can copy; Chief Stew never runs it.
     public var command: String?
+    public var repoPath: String = ""
 }
 
 public struct Problem: Sendable, Equatable, Identifiable {
@@ -418,7 +426,8 @@ extension Board {
             staleSince: repo.statusError?.since,
             parked: row.isParked,
             branch: row.branch, branchURL: row.branchURL, author: row.author,
-            onlyOnOrigin: row.onlyOnOrigin == true, fetchedAt: repo.status?.fetchedAt, agentWorking: busy > 0)
+            onlyOnOrigin: row.onlyOnOrigin == true, fetchedAt: repo.status?.fetchedAt, agentWorking: busy > 0,
+            repoPath: repo.path)
     }
 
     static func leftItems(repo: RepoSnapshot, sweep: SweepReport) -> [LeftItem] {
@@ -429,7 +438,7 @@ extension Board {
                 LeftItem(
                     id: "\(repo.path)#dbs", repoName: repo.name,
                     title: leaked.count == 1 ? "1 leaked database" : "\(leaked.count) leaked databases",
-                    details: leaked, command: nil))
+                    details: leaked, command: nil, repoPath: repo.path))
         }
         if !sweep.processes.isEmpty {
             let n = sweep.processes.count
@@ -441,7 +450,8 @@ extension Board {
                     details: sweep.processes.map {
                         "pid \($0.pid) · \(PathMatch.relative($0.cwd, to: repo.path)) (gone)"
                     },
-                    command: "kill " + sweep.processes.map { String($0.pid) }.joined(separator: " ")))
+                    command: "kill " + sweep.processes.map { String($0.pid) }.joined(separator: " "),
+                    repoPath: repo.path))
         }
         if !sweep.routes.isEmpty {
             let n = sweep.routes.count
@@ -452,7 +462,7 @@ extension Board {
                     details: sweep.routes.map { r in
                         r.reason.map { "\(r.hostname) · \($0)" } ?? r.hostname
                     },
-                    command: nil))
+                    command: nil, repoPath: repo.path))
         }
         return items
     }

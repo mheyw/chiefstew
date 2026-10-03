@@ -272,7 +272,7 @@ private func roadmapRepo() throws -> URL {
     #expect(r.ref == "main" && !r.fromOrigin)
     #expect(r.groups.map(\.name) == ["Anytime pool", "Accounts", "Checkout"])
     #expect(r.bytes > 0 && !r.blob.isEmpty)
-    #expect(RoadmapReader.blob(repo: repo.path, spec: spec) == r.blob)
+    #expect(RoadmapReader.source(repo: repo.path, spec: spec) == .init(ref: "main", fromOrigin: false, blob: r.blob))
 }
 
 @Test func originsMainIsReadWhenItsFresher() throws {

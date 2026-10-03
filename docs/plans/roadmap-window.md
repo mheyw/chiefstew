@@ -1,6 +1,6 @@
 # Plan: the Chief Stew window and the roadmap
 
-Status: **phase 1 done** (parser, `check`, `roadmap` and `prompt roadmap`); phase 2 not started. The contract changes are in `event-contract.md` § 4c and `workflow.md` § Roadmap.
+Status: **phases 1 and 2 done.** Phase 3 waits on the two-week check below. The contract changes are in `event-contract.md` § 4c and `workflow.md` § Roadmap.
 
 ## Why
 

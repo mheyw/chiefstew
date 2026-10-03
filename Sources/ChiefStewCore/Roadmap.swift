@@ -410,14 +410,24 @@ public enum RoadmapReader {
         }
     }
 
-    /// The file's blob ID on the roadmap's ref: changes only when the file does, so a caller
-    /// can skip re-reading it.
-    public static func blob(repo: String, spec: RoadmapSpec) -> String? {
-        let git = GitReader(repo: PathMatch.normalize(repo))
-        guard let (ref, _) = ref(git) else { return nil }
-        return git.run(["rev-parse", "--verify", "--quiet", "\(ref):\(spec.file)"])?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Where the roadmap would be read from, and the file's blob ID there (nil when it's
+    /// missing). Cheap: a caller re-reads only when the blob changes.
+    public struct Source: Sendable, Equatable {
+        public var ref: String
+        public var fromOrigin: Bool
+        public var blob: String?
     }
+
+    public static func source(repo: String, spec: RoadmapSpec) -> Source? {
+        let git = GitReader(repo: PathMatch.normalize(repo))
+        guard let (ref, fromOrigin) = ref(git) else { return nil }
+        let blob = git.run(["rev-parse", "--verify", "--quiet", "\(ref):\(spec.file)"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Source(ref: ref, fromOrigin: fromOrigin, blob: blob.flatMap { $0.isEmpty ? nil : $0 })
+    }
+
+    /// When the clone last fetched: how fresh a roadmap read from origin is.
+    public static func fetchedAt(repo: String) -> Date? { GitReader(repo: PathMatch.normalize(repo)).fetchedAt() }
 
     public static func read(repo: String, spec: RoadmapSpec) -> Result<Roadmap, RoadmapProblem> {
         let git = GitReader(repo: PathMatch.normalize(repo))

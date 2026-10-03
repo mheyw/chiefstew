@@ -28,6 +28,14 @@ final class AppModel {
     private(set) var claude: ClaudeSessions?
     private(set) var loginError: String?
     var settingsTab: SettingsTab = .repos
+    static let boardWindowID = "board"
+    /// What the window shows.
+    var windowSelection = WindowSelection()
+    /// The window is on screen: updates wait, as they do for the panel.
+    var windowOpen = false
+    /// The window was asked for (from the panel, or reopened after an update). SwiftUI may open
+    /// or restore it by itself at launch; then it's closed straight away.
+    var windowRequested = false
     private(set) var update: UpdateBanner?
 
     var settings: Preferences {
@@ -126,6 +134,11 @@ final class AppModel {
             repos: repos.map { snapshots[$0] ?? RepoSnapshot(path: $0) },
             agents: tracker.current(now: now), eventGates: events.gates.current(now: now), claude: claude,
             now: now)
+    }
+
+    /// Each repo as the window shows it, from the same board as the panel.
+    func repoViews(now: Date) -> [RepoView] {
+        RepoView.make(repos: repos.map { snapshots[$0] ?? RepoSnapshot(path: $0) }, board: board(now: now))
     }
 
     // MARK: lifecycle
@@ -367,10 +380,10 @@ final class AppModel {
         }
     }
 
-    /// Automatic mode waits only while the panel is open (seconds), so the app never restarts
+    /// Automatic mode waits while the panel or the window is open, so the app never restarts
     /// under your click. Settings may be open: it's reopened where it was after the restart.
     func installIfAutomatic() {
-        guard settings.updateMode == .automatic, case .available = update, !panelOpen else { return }
+        guard settings.updateMode == .automatic, case .available = update, !panelOpen, !windowOpen else { return }
         installUpdate()
     }
 
@@ -384,6 +397,20 @@ final class AppModel {
     func takeReopenSettingsTab() -> SettingsTab? {
         defer { reopenSettingsTab = nil }
         return reopenSettingsTab
+    }
+
+    /// Set at launch when an update restarted the app with the window open (the user chose to
+    /// install while it was): reopen it on the same repo and tab.
+    func takeReopenWindow() -> Bool {
+        let d = UserDefaults.standard
+        defer {
+            for key in ["reopenWindow", "reopenWindowRepo", "reopenWindowTab"] { d.removeObject(forKey: key) }
+        }
+        guard d.bool(forKey: "reopenWindow") else { return false }
+        windowSelection = WindowSelection(
+            repo: d.string(forKey: "reopenWindowRepo"),
+            tab: d.string(forKey: "reopenWindowTab").flatMap(WindowTab.init(rawValue:)) ?? .roadmap)
+        return true
     }
 
     var settingsOpen: Bool { NSApp.windows.contains { $0.identifier == WindowFront.settingsID && $0.isVisible } }
@@ -442,6 +469,11 @@ final class AppModel {
         process.arguments = [(source.dir as NSString).appendingPathComponent("build.sh"), "update", target.ref]
         UserDefaults.standard.set(target.label ?? "the latest version", forKey: "pendingUpdateLabel")
         if settingsOpen { UserDefaults.standard.set(settingsTab.rawValue, forKey: "reopenSettingsTab") }
+        if windowOpen {
+            UserDefaults.standard.set(true, forKey: "reopenWindow")
+            UserDefaults.standard.set(windowSelection.repo, forKey: "reopenWindowRepo")
+            UserDefaults.standard.set(windowSelection.tab.rawValue, forKey: "reopenWindowTab")
+        }
         UserDefaults.standard.set(target.notes ?? "", forKey: "pendingUpdateNotes")
         process.currentDirectoryURL = URL(fileURLWithPath: source.dir)
         var env = ProcessInfo.processInfo.environment
@@ -681,11 +713,60 @@ final class AppModel {
         snapshots[repo] = current
         updateNotifications()
         dumpDebugState()
+        await refreshRoadmap(repo)
 
         if rerun.remove(repo) != nil {
             inflight.remove(repo)
             await refresh(repo)
         }
+    }
+
+    /// Re-reads the repo's roadmap when its file changed on the branch it's read from (contract
+    /// § 4c); otherwise only how fresh it is. Off the main thread: it runs a few git commands.
+    func refreshRoadmap(_ repo: String) async {
+        let previous = snapshots[repo]?.roadmap
+        let (configured, roadmap, problem) = await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .utility).async {
+                cont.resume(returning: Self.readRoadmap(repo: repo, previous: previous))
+            }
+        }
+        guard repos.contains(repo) else { return }
+        var snap = snapshots[repo] ?? RepoSnapshot(path: repo)
+        snap.roadmapConfigured = configured
+        snap.roadmap = roadmap
+        if let problem {
+            // Keep when it started, so a lasting problem doesn't look new at every poll.
+            if snap.roadmapError?.message != problem.message { snap.roadmapError = problem }
+        } else {
+            snap.roadmapError = nil
+        }
+        snapshots[repo] = snap
+    }
+
+    nonisolated static func readRoadmap(repo: String, previous: Roadmap?) -> (Bool, Roadmap?, RepoError?) {
+        // A config that can't be read is already shown as the repo's status problem.
+        guard case .success(let config) = RepoConfig.load(repo: repo) else { return (false, nil, nil) }
+        if let p = config.roadmapProblem {
+            return (true, nil, RepoError(message: p, since: Date(), hint: "Fix \"roadmap\" in .chiefstew.json; chiefstew check explains it."))
+        }
+        guard let spec = config.roadmap else { return (false, nil, nil) }
+        if var same = previous, let source = RoadmapReader.source(repo: repo, spec: spec),
+            source.blob == same.blob, source.ref == same.ref, same.file == spec.file
+        {
+            if same.fromOrigin { same.fetchedAt = RoadmapReader.fetchedAt(repo: repo) }
+            return (true, same, nil)
+        }
+        switch RoadmapReader.read(repo: repo, spec: spec) {
+        case .success(let r): return (true, r, nil)
+        case .failure(let p): return (true, nil, RepoError(message: p.message, since: Date(), hint: p.hint))
+        }
+    }
+
+    func roadmapPrompt(for repo: String) -> String {
+        let config = (try? RepoConfig.load(repo: repo).get()) ?? RepoConfig(status: nil, sweep: nil, source: .none)
+        return SetupPrompt.roadmap(
+            repo: repo, config: config, workflowDoc: workflowDoc,
+            cli: cliPath ?? "/Applications/Chief Stew.app/Contents/Helpers/chiefstew")
     }
 
     func sweepAll() async {
@@ -905,7 +986,9 @@ final class AppModel {
         }
     }
 
-    func actions(openSettings: @escaping (SettingsTab) -> Void) -> PanelActions {
+    func actions(
+        openSettings: @escaping (SettingsTab) -> Void, openWindow: @escaping (WindowSelection) -> Void
+    ) -> PanelActions {
         var a = PanelActions()
         a.openFile = { [weak self] in self?.openFile($0) }
         a.openFromGit = { [weak self] repo, spec in Task { await self?.openFromGit(repo: repo, spec: spec) } }
@@ -932,6 +1015,12 @@ final class AppModel {
         }
         a.openNotifications = { openSettings(.notifications) }
         a.openSettings = { openSettings(.general) }
+        a.openWindow = openWindow
+        a.copyRoadmapPrompt = { [weak self] repo in
+            guard let self else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(self.roadmapPrompt(for: repo), forType: .string)
+        }
         a.quit = { NSApplication.shared.terminate(nil) }
         return a
     }

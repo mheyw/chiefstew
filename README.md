@@ -3,6 +3,7 @@
 A macOS menu-bar app that shows, live, what your coding agents and builds are doing, and **what needs you**: a Claude session asking a question or waiting for permission, a build waiting for your sign-off, finished work that isn't merged. Everything else stays quiet, so you can do other things while they run.
 
 - Works with **any git repo**. With no setup, it shows each repo's agents. A repo that adds a read-only status command also gets its builds, phases, gates and leftovers.
+- **The window** (⌘O from the panel) shows a repo's **roadmap**, read from the plan it already keeps (what's in flight, what's marked next, what's still to come and what's shipped), and the full detail of anything left behind. Set one up with `chiefstew prompt roadmap`, or **Copy roadmap setup prompt** in the window.
 - **Local only:** no network listeners, no telemetry. It never changes your repos.
 - macOS 14+, Swift only. Built from source with one command.
 

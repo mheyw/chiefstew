@@ -1,0 +1,19 @@
+// dev/demo.sh roadmap copies this over .chiefstew.json in a scratch git copy of the demo repo.
+{
+  "v": 1,
+  "status": ["node", "scripts/status.mjs", "status"],
+  "sweep": ["node", "scripts/status.mjs", "sweep"],
+  "roadmap": {
+    "file": "docs/roadmap.md",
+    "group": { "match": "^Stage \\d+: (?<name>.+)" },
+    "columns": { "num": "#", "name": "Build", "status": "Status" },
+    "status": {
+      "done": "^Done(?: (?<date>[\\d-]+))?",
+      "folded": "^Merged into",
+      "dropped": "^Dropped",
+      "active": "^In progress",
+      "next": "^Next",
+      "planned": "^Planned",
+    },
+  },
+}

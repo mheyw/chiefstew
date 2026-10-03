@@ -6,6 +6,7 @@ import SwiftUI
 /// front, on the current desktop.
 enum WindowFront {
     static let settingsID = NSUserInterfaceItemIdentifier("chiefstew.settings")
+    static let boardID = NSUserInterfaceItemIdentifier("chiefstew.board")
 
     @MainActor static func raise(_ window: NSWindow?) {
         guard let window else { return }
@@ -18,6 +19,11 @@ enum WindowFront {
     /// The Settings window, if it's open (it may be hidden behind other apps).
     @MainActor static func raiseSettings() {
         raise(NSApp.windows.first { $0.identifier == settingsID })
+    }
+
+    /// The Chief Stew window, if it's open.
+    @MainActor static func raiseBoard() {
+        raise(NSApp.windows.first { $0.identifier == boardID })
     }
 }
 

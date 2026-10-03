@@ -17,6 +17,10 @@ public struct PanelActions {
     public var openNotifications: () -> Void = {}
     /// Settings → General.
     public var openSettings: () -> Void = {}
+    /// The Chief Stew window, on a repo (nil: All repos) and tab.
+    public var openWindow: (WindowSelection) -> Void = { _ in }
+    /// Copies `chiefstew prompt roadmap` for the repo at this path.
+    public var copyRoadmapPrompt: (String) -> Void = { _ in }
     public var quit: () -> Void = {}
 
     public init() {}
@@ -145,6 +149,8 @@ public struct PanelView: View {
             } else {
                 FooterIcon("Refresh", "arrow.clockwise", action: actions.refresh).keyboardShortcut("r")
             }
+            FooterIcon("Open Chief Stew", "macwindow") { actions.openWindow(WindowSelection()) }
+                .keyboardShortcut("o")
             FooterIcon("Repos", "folder", action: actions.openRepos)
             FooterIcon("Notifications", "bell", action: actions.openNotifications)
             FooterIcon("Settings", "gearshape", action: actions.openSettings).keyboardShortcut(",")
@@ -266,43 +272,30 @@ public struct PanelView: View {
         }
     }
 
+    /// One line and the commands to copy: cleanup stays one click away. The detail (every
+    /// database, process and route) is in the window.
     private var leftBehind: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let commands = Self.unique(board.leftBehind.compactMap(\.command) + board.leftCleanup)
+        return VStack(alignment: .leading, spacing: 6) {
             SectionTitle(
                 text: "Left behind",
                 trailing: board.sweptAt.map { "swept \(Durations.ago(now.timeIntervalSince($0)))" })
-            ForEach(Array(board.leftBehind.enumerated()), id: \.element.id) { i, item in
-                if i > 0 { RowDivider() }
-                Row(label: item.title) {
-                    HStack(spacing: 7) {
+            if !board.leftBehind.isEmpty {
+                Row(label: "Left behind: \(board.leftSummary)") {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(Palette.attention)
                             .font(.system(size: 11))
-                        Text(item.title).fontWeight(.semibold)
+                        Text(board.leftSummary).fontWeight(.semibold)
                     }
-                    Text(item.details.joined(separator: "\n"))
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .indented()
-                    if let command = item.command {
-                        Actions {
-                            Button("Copy: \(command)") { actions.copy(command) }
-                                .buttonStyle(PillButtonStyle())
-                                .help(command)
-                        }
-                    }
-                }
-            }
-            if !board.leftCleanup.isEmpty {
-                RowDivider()
-                Row(label: "To clean up") {
-                    Text("To clean up").fontWeight(.semibold)
                     Actions {
-                        ForEach(board.leftCleanup, id: \.self) { command in
+                        ForEach(commands, id: \.self) { command in
                             Button("Copy: \(command)") { actions.copy(command) }
                                 .buttonStyle(PillButtonStyle())
                                 .help(command)
                         }
+                        Button("Details") { actions.openWindow(board.leftTarget) }
+                            .buttonStyle(PillButtonStyle())
                     }
                 }
             }
@@ -310,6 +303,11 @@ public struct PanelView: View {
                 Text(note).font(.system(size: 12)).foregroundStyle(.secondary).padding(.bottom, 6)
             }
         }
+    }
+
+    static func unique(_ list: [String]) -> [String] {
+        var seen = Set<String>()
+        return list.filter { seen.insert($0).inserted }
     }
 }
 
@@ -618,7 +616,7 @@ struct RowDivider: View {
 }
 
 extension View {
-    fileprivate func indented() -> some View { padding(.leading, 15) }
+    func indented() -> some View { padding(.leading, 15) }
 }
 
 /// A footer button that shows only its icon. The name is still there for VoiceOver (it reads

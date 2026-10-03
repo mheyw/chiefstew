@@ -172,7 +172,7 @@
 </div>
 
 <!-- LEFT BEHIND -->
-<div class="state"><h2>4 · Left behind <span>— sweep findings; show only, you run cleanup</span></h2>
+<div class="state"><h2>4 · Left behind <span>— one line and the commands to copy; Details opens the window</span></h2>
 <div class="panel">
   <div class="phead"><b>Chief Stew</b><span>1 build · 4 left behind</span></div>
   <div class="sect"><div class="stitle">In progress</div>
@@ -183,19 +183,8 @@
   </div>
   <div class="sect"><div class="stitle"><span>Left behind</span><span style="text-transform:none;letter-spacing:0;font-weight:400">swept 6 min ago</span></div>
     <div class="row">
-      <div class="l1"><span class="warn">⚠</span><span class="name">1 leaked database</span></div>
-      <div class="l3 mono">myapp_wt_fix_b</div>
-      <div class="acts"><span class="btn">Copy: make clean-dbs</span></div>
-    </div>
-    <div class="row">
-      <div class="l1"><span class="warn">⚠</span><span class="name">2 processes in deleted folders</span></div>
-      <div class="l3 mono">pid 67816 · .claude/worktrees/129 (gone)<br>pid 67818 · .claude/worktrees/129 (gone)</div>
-      <div class="acts"><span class="btn">Copy: kill 67816 67818</span></div>
-    </div>
-    <div class="row">
-      <div class="l1"><span class="warn">⚠</span><span class="name">1 stray portless route</span></div>
-      <div class="l3 mono">fix-b.api.my-app.localhost · process 5512 is gone</div>
-      <div class="acts"><span class="btn">Copy: portless prune</span></div>
+      <div class="l1"><span class="warn">⚠</span><span class="name">1 leaked database, 2 processes in deleted folders, 1 stray route</span></div>
+      <div class="acts"><span class="btn">Copy: kill 67816 67818</span><span class="btn">Copy: make clean-dbs</span><span class="btn">Copy: portless prune</span><span class="btn">Details</span></div>
     </div>
   </div>
   <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="muted">checked 12 s ago</span><span class="q2">Quit</span></div>
