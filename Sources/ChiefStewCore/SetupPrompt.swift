@@ -17,8 +17,7 @@ public enum SetupPrompt {
         case .file: now = "It has a `.chiefstew.json` with a status command."
         }
         if let problem { now += " Last check: \(problem)" }
-        let safe = cli.allSatisfy { $0.isLetter || $0.isNumber || "/._-".contains($0) }
-        let cs = safe ? cli : "'" + cli.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let cs = quoted(cli)
 
         return """
             Set up this repo (\(name)) for Chief Stew.
@@ -44,7 +43,7 @@ public enum SetupPrompt {
                - So it stays accurate, add a short section to the repo's agent instructions (`AGENTS.md` or `CLAUDE.md`; create `AGENTS.md` if there's neither). Tell agents to create the file when starting a build, update the state line as work moves, set the sign-off line to waiting when they need the owner, and tick tasks as they finish them. Keep it to a few lines, in the repo's own voice.
                - Leave everything uncommitted for review.
 
-            3. **Write `.chiefstew.json`** at the repo root, as JSON5 (comments welcome). Put a `"workflow"` in it, as described in "The workflow format" below. Describe only what the repo really records, including any structure you added in step 2. Leave out anything the defaults already handle well.
+            3. **Write `.chiefstew.json`** at the repo root, as JSON5 (comments welcome). Put a `"workflow"` in it, as described in "The workflow format" below. Describe only what the repo really records, including any structure you added in step 2. Leave out anything the defaults already handle well. If the repo keeps its plan in a file (builds with IDs and statuses: a roadmap or backlog), also describe it in a top-level `"roadmap"` (see "Roadmap" in the format below).
 
             4. **Check it:** run `\(cs) check` in the repo. It prints every build it found, what it skipped and why, and for each field what matched and why anything didn't. Fix the description and run it again until it's right. **Read the skipped list too:** if it skipped something that's real work in flight, adjust the description so it's included (the reason says how). `\(cs) status` prints the exact JSON Chief Stew will show. If nothing is in flight right now, `check` still confirms the description is valid. To see the rules work on real data, try them on a branch you create in a scratch clone, then delete the clone.
 
@@ -74,5 +73,48 @@ public enum SetupPrompt {
 
             \(contract ?? "See docs/event-contract.md in the Chief Stew repo.")
             """
+    }
+
+    /// `chiefstew prompt roadmap`: for a repo already set up, describe only where its plan is
+    /// written down. Done when `check` explains every row.
+    public static func roadmap(repo: String, config: RepoConfig, workflowDoc: String?, cli: String) -> String {
+        let name = URL(fileURLWithPath: repo).lastPathComponent
+        let cs = quoted(cli)
+        var now = config.roadmap == nil
+            ? "Its `.chiefstew.json` has no `roadmap` yet."
+            : "Its `.chiefstew.json` already has a `roadmap`. Improve it."
+        if config.source == .none { now = "It has no `.chiefstew.json` yet. Create one with only a `roadmap` (and `\"v\": 1`)." }
+        if let p = config.roadmapProblem { now += " It has a problem: \(p)" }
+        return """
+            Describe this repo's (\(name)) roadmap for Chief Stew.
+
+            Chief Stew is a macOS menu-bar app that shows what's in flight in a repo. A `roadmap` in `.chiefstew.json` tells it where the repo writes its plan down (builds that are done, in progress, marked next and still to come), so it can show what to pick up next. It's data: nothing in the repo runs. Don't change anything else in `.chiefstew.json`.
+
+            Current state: \(now)
+
+            Steps:
+
+            1. **Find the plan.** Look for a markdown file listing builds or features with an ID and a status, usually in tables: a roadmap, backlog or build list. Pick the one the team keeps current. It must be committed on the default branch (Chief Stew reads it from git) and be under 256 KB; if the only candidate is bigger, use `section` to point at the part with the plan.
+
+            2. **Describe it** in a top-level `"roadmap"`, as in "Roadmap" in the format below:
+               - `columns`: the header text of the ID column, and of the name and status columns.
+               - `group.match`: a regular expression for the headings that name groups (stages, milestones, pools). Only tables under a matching heading are read, so summary or "sequencing" tables that repeat rows elsewhere are left out. Use a named group `name` to trim what's shown, without decoration such as em dashes.
+               - `status`: regular expressions for `done` (with a `date` group if dates are written), `folded` (merged into another build), `dropped`, `active` (in progress) and `next` (marked as next up or ready). Look at every distinct status the file uses before writing them. Anything else counts as planned.
+
+            3. **Check it:** run `\(cs) check` in the repo and read its Roadmap section. It lists every group, the tables it skipped and why, status text no rule matched, rows without an ID, and duplicates. Iterate until every table skipped is meant to be, every unmatched status really means "planned", and the duplicates are only rows the file repeats on purpose. `\(cs) roadmap` prints the rows as Chief Stew read them.
+
+            4. Leave `.chiefstew.json` uncommitted. Tell the owner what you described and show the final `check` output.
+
+            ---
+
+            # The format
+
+            \(workflowDoc ?? "See docs/workflow.md in the Chief Stew repo.")
+            """
+    }
+
+    static func quoted(_ cli: String) -> String {
+        let safe = cli.allSatisfy { $0.isLetter || $0.isNumber || "/._-".contains($0) }
+        return safe ? cli : "'" + cli.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

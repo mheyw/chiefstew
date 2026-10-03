@@ -51,3 +51,23 @@ public enum StatusJSON {
         return out
     }
 }
+
+/// A `Roadmap` as JSON, for `chiefstew roadmap`. Diagnostic only: not part of the contract.
+public enum RoadmapJSON {
+    public static func encode(_ r: Roadmap) -> [String: Any] {
+        let iso = ISO8601DateFormatter()
+        func row(_ x: Roadmap.Row) -> [String: Any] {
+            var d: [String: Any] = ["num": x.num ?? NSNull(), "name": x.name, "status": x.status.rawValue, "text": x.text, "line": x.line]
+            if let t = x.date { d["date"] = iso.string(from: t) }
+            return d
+        }
+        var out: [String: Any] = [
+            "file": r.file, "ref": r.ref, "fromOrigin": r.fromOrigin, "bytes": r.bytes,
+            "groups": r.groups.map { ["name": $0.name, "line": $0.line, "rows": $0.rows.map(row)] as [String: Any] },
+            "skipped": r.skipped.map { ["line": $0.line, "reason": $0.reason] as [String: Any] },
+            "duplicates": r.duplicates.map { ["num": $0.num, "line": $0.line, "firstLine": $0.firstLine] as [String: Any] },
+        ]
+        if let t = r.fetchedAt { out["fetchedAt"] = iso.string(from: t) }
+        return out
+    }
+}

@@ -13,18 +13,37 @@ public enum WorkflowCheck {
 
     public static func run(repo: String, file: String? = nil) -> Result {
         let repo = PathMatch.normalize(repo)
+        let config = RepoConfig.load(repo: repo, file: file)
+        var result = workflow(repo: repo, config: config, file: file)
+        guard case .success(let c) = config else { return result }
+        if !c.unknownKeys.isEmpty {
+            let known = RepoConfig.knownKeys.sorted().joined(separator: ", ")
+            result.text += "\n\n⚠ Unknown key\(c.unknownKeys.count == 1 ? "" : "s") in .chiefstew.json, ignored: \(c.unknownKeys.joined(separator: ", ")) (known: \(known))"
+        }
+        if c.roadmap != nil || c.roadmapProblem != nil {
+            let r = roadmap(repo: repo, config: c)
+            result.text += "\n\n" + r.text
+            result.summary += " · " + r.summary
+            result.ok = result.ok && r.ok
+        }
+        return result
+    }
+
+    static func workflow(repo: String, config: Swift.Result<RepoConfig, StatusError>, file: String?) -> Result {
         let name = URL(fileURLWithPath: repo).lastPathComponent
-        switch RepoConfig.load(repo: repo, file: file) {
+        switch config {
         case .failure(let e):
             return Result(ok: false, summary: "Problem in .chiefstew.json", text: "✗ \(e.description)")
         case .success(let c) where c.workflow == nil:
             let what: String
             switch c.source {
+            case .file where c.status == nil: what = "No workflow or status command: only this repo's agents are shown."
             case .none: what = "No .chiefstew.json: only this repo's agents are shown. Run `chiefstew init` or the setup prompt."
             case .file: what = "This repo uses a status command: \(RepoConfig.display(c.status ?? [])). `check` only explains a workflow."
             default: what = "This repo uses \(c.source.rawValue). `check` only explains a workflow."
             }
-            return Result(ok: c.source != .none, summary: c.source == .none ? "Agents only" : "Status command", text: what)
+            let agentsOnly = c.status == nil
+            return Result(ok: c.source != .none, summary: agentsOnly ? "Agents only" : "Status command", text: what)
         case .success(let c):
             let (report, diagnostics, skipped) = WorkflowEngine(repo: repo, spec: c.workflow!).runExplained()
             let from = file.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ".chiefstew.json"
@@ -75,6 +94,64 @@ public enum WorkflowCheck {
                 : (["\(n) build\(n == 1 ? "" : "s")"] + parts).joined(separator: " · ")
             return Result(ok: true, summary: summary, text: lines.joined(separator: "\n"))
         }
+    }
+
+    /// The roadmap part of `check`: where it was read from, every group, and everything not read
+    /// or not understood, so nothing in the file goes unexplained.
+    static func roadmap(repo: String, config c: RepoConfig) -> Result {
+        if let problem = c.roadmapProblem {
+            return Result(ok: false, summary: "roadmap ✗", text: "Roadmap\n✗ \(problem)")
+        }
+        guard let spec = c.roadmap else { return Result(ok: true, summary: "", text: "") }
+        let roadmap: Roadmap
+        switch RoadmapReader.read(repo: repo, spec: spec) {
+        case .failure(let p):
+            return Result(ok: false, summary: "roadmap ✗", text: "Roadmap\n✗ \(p.message)" + (p.hint.map { "\n  \($0)" } ?? ""))
+        case .success(let r): roadmap = r
+        }
+        var lines: [String] = []
+        var from = "\(roadmap.file) on \(roadmap.ref) · \(max(1, roadmap.bytes / 1024)) KB"
+        if roadmap.fromOrigin {
+            from += roadmap.fetchedAt.map { " · as of the last fetch, \(Durations.ago(Date().timeIntervalSince($0)))" } ?? " · as of the last fetch"
+        }
+        lines.append("Roadmap · \(from)")
+        let rows = roadmap.rows
+        var counts: [RowStatus: Int] = [:]
+        for r in rows { counts[r.status, default: 0] += 1 }
+        let words: [RowStatus: String] = [.done: "done", .folded: "folded", .dropped: "dropped", .active: "in progress", .next: "next", .planned: "planned"]
+        let breakdown = [RowStatus.done, .active, .next, .planned, .folded, .dropped]
+            .compactMap { s in counts[s].map { "\($0) \(words[s]!)" } }.joined(separator: ", ")
+        let named = roadmap.groups.contains { !$0.name.isEmpty }
+        if rows.isEmpty {
+            lines.append("✗ No rows read. Check roadmap.columns and roadmap.group against the file (skipped tables are listed below).")
+        } else {
+            let groups = named ? " in \(roadmap.groups.count) group\(roadmap.groups.count == 1 ? "" : "s")" : ""
+            lines.append("✓ \(rows.count) row\(rows.count == 1 ? "" : "s")\(groups): \(breakdown)")
+        }
+        if named {
+            lines.append("")
+            for g in roadmap.groups {
+                let done = g.rows.filter { $0.status == .done }.count
+                let toDo = g.rows.filter { [.planned, .next, .active].contains($0.status) }.count
+                lines.append("  line \(g.line)  \(g.name): \(g.rows.count) row\(g.rows.count == 1 ? "" : "s") (\(done) done, \(toDo) to do)")
+            }
+        }
+        func list(_ title: String, _ items: [String]) {
+            guard !items.isEmpty else { return }
+            lines.append("")
+            lines.append("  \(title):")
+            for i in items.prefix(30) { lines.append("    · \(i)") }
+            if items.count > 30 { lines.append("    · …and \(items.count - 30) more") }
+        }
+        list("Tables skipped", roadmap.skipped.map { "line \($0.line) \($0.reason)" })
+        list("Status text no rule matched (shown as planned; add a rule if it means something else)",
+            roadmap.unmatched.map { "line \($0.line) \($0.num ?? "–") \"\($0.text)\"" })
+        list("Rows without an ID (shown, never joined to status)",
+            rows.filter { $0.num == nil }.map { "line \($0.line) \($0.name.isEmpty ? "(no name)" : $0.name)" })
+        list("Duplicates (the first row wins)",
+            roadmap.duplicates.map { "\($0.num) on line \($0.line), first on line \($0.firstLine)" })
+        let summary = rows.isEmpty ? "roadmap ✗" : "roadmap \(rows.count) rows"
+        return Result(ok: !rows.isEmpty, summary: summary, text: lines.joined(separator: "\n"))
     }
 
     static func describe(_ b: WorkflowSpec.Builds) -> String {

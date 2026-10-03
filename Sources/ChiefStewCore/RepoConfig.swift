@@ -19,8 +19,15 @@ public struct RepoConfig: Sendable, Equatable {
     public var sweep: [String]?
     public var workflow: WorkflowSpec?
     public var source: Source
+    /// The plan around the builds (contract § 4c). Optional, and next to any source.
+    public var roadmap: RoadmapSpec?
+    /// A broken `roadmap` is reported on its own: it never stops status.
+    public var roadmapProblem: String?
+    /// Top-level keys Chief Stew doesn't know (a misspelt `roadmp`, say), for `chiefstew check`.
+    public var unknownKeys: [String] = []
 
     public static let fileName = ".chiefstew.json"
+    static let knownKeys: Set<String> = ["v", "name", "status", "sweep", "workflow", "roadmap"]
 
     public init(name: String? = nil, status: [String]?, sweep: [String]?, source: Source) {
         self.name = name
@@ -56,6 +63,7 @@ public struct RepoConfig: Sendable, Equatable {
             case (.failure(let e), _), (_, .failure(let e)): return .failure(e)
             case (.success(let s), .success(let w)): (status, sweep) = (s, w)
             }
+            var c = RepoConfig(name: json["name"] as? String, status: status, sweep: sweep, source: .file)
             if let w = json["workflow"] {
                 if status != nil {
                     return .failure(.badConfig(file, "use either \"workflow\" or \"status\", not both"))
@@ -63,13 +71,18 @@ public struct RepoConfig: Sendable, Equatable {
                 switch WorkflowSpec.parse(w) {
                 case .failure(let problems): return .failure(.badConfig(file, problems.description))
                 case .success(let spec):
-                    var c = RepoConfig(name: json["name"] as? String, status: nil, sweep: sweep, source: .workflow)
+                    c.source = .workflow
                     c.workflow = spec
-                    return .success(c)
                 }
             }
-            return .success(
-                RepoConfig(name: json["name"] as? String, status: status, sweep: sweep, source: .file))
+            if let r = json["roadmap"] {
+                switch RoadmapSpec.parse(r) {
+                case .success(let spec): c.roadmap = spec
+                case .failure(let problems): c.roadmapProblem = problems.description
+                }
+            }
+            c.unknownKeys = json.keys.filter { !knownKeys.contains($0) }.sorted()
+            return .success(c)
         }
         return .success(RepoConfig(status: nil, sweep: nil, source: .none))
     }

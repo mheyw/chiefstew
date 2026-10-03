@@ -23,8 +23,13 @@
 //   chiefstew init [--repo path] [--force]
 //       Writes a starter .chiefstew.json (uncommitted) based on the repo's worktrees and branches.
 //
-//   chiefstew prompt [--repo path]
+//   chiefstew roadmap [--repo path] [--workflow file]
+//       Prints the repo's roadmap as Chief Stew read it, as JSON. For diagnosis only: the shape
+//       isn't part of the contract.
+//
+//   chiefstew prompt [roadmap] [--repo path]
 //       Prints the setup prompt, for any coding agent: chiefstew prompt | claude -p
+//       `roadmap`: only the roadmap, for a repo that's already set up.
 //
 //   chiefstew version
 
@@ -42,7 +47,8 @@ func usage() -> Never {
             usage: chiefstew status [--repo path] [--workflow file]   build status as contract JSON
                    chiefstew check  [--repo path] [--workflow file]   explain the repo's workflow description
                    chiefstew init   [--repo path] [--force]   write a starter .chiefstew.json
-                   chiefstew prompt [--repo path]     print the setup prompt for a coding agent
+                   chiefstew roadmap [--repo path] [--workflow file]  the roadmap as read, as JSON
+                   chiefstew prompt [roadmap] [--repo path]   print the setup prompt for a coding agent
                    chiefstew emit <kind> [--build nnn] [--gate name] [--phase n] [--slug s]
                                   [--lane l] [--message text] [--session id] [--agent a] [--repo path]
                    chiefstew hook notify|stop|prompt|active|end     (for Claude Code hooks)
@@ -289,10 +295,37 @@ func prompt(_ rest: [String]) -> Never {
     // Called by name from PATH: say `chiefstew`; otherwise the full path of this copy.
     let argv0 = CommandLine.arguments[0]
     let cli = argv0.contains("/") ? selfURL().path : argv0
+    if rest.first == "roadmap" {
+        print(SetupPrompt.roadmap(repo: repo, config: config, workflowDoc: bundled("workflow.md"), cli: cli))
+        exit(0)
+    }
     print(SetupPrompt.make(
         repo: repo, config: config, problem: nil, contract: bundled("event-contract.md"),
         workflowDoc: bundled("workflow.md"), cli: cli))
     exit(0)
+}
+
+func roadmap(_ rest: [String]) -> Never {
+    let repo = repoArg(rest)
+    func fail(_ message: String) -> Never {
+        FileHandle.standardError.write(Data("\(message)\n".utf8))
+        exit(1)
+    }
+    let config: RepoConfig
+    switch RepoConfig.load(repo: repo, file: workflowArg(rest)) {
+    case .failure(let e): fail(e.description)
+    case .success(let c): config = c
+    }
+    if let p = config.roadmapProblem { fail(p) }
+    guard let spec = config.roadmap else { fail("No roadmap in .chiefstew.json. Try: chiefstew prompt roadmap") }
+    switch RoadmapReader.read(repo: repo, spec: spec) {
+    case .failure(let p): fail(p.message + (p.hint.map { "\n\($0)" } ?? ""))
+    case .success(let r):
+        let data = (try? JSONSerialization.data(
+            withJSONObject: RoadmapJSON.encode(r), options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
+        print(String(decoding: data, as: UTF8.self))
+        exit(0)
+    }
 }
 
 switch args.first {
@@ -300,6 +333,7 @@ case "status": status(Array(args.dropFirst()))
 case "check": check(Array(args.dropFirst()))
 case "init": initRepo(Array(args.dropFirst()))
 case "prompt": prompt(Array(args.dropFirst()))
+case "roadmap": roadmap(Array(args.dropFirst()))
 case "hook": hook(args.dropFirst().first)
 case "emit": emit(Array(args.dropFirst()))
 case "version", "--version":

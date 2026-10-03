@@ -200,10 +200,21 @@ private let typical = """
     let text = try String(contentsOf: doc, encoding: .utf8)
     let blocks = text.components(separatedBy: "```json5\n").dropFirst().map { $0.components(separatedBy: "```")[0] }
     #expect(blocks.count >= 3)
+    var roadmaps = 0
     for block in blocks {
         let json = try #require(try JSONSerialization.jsonObject(with: Data(block.utf8), options: [.json5Allowed]) as? [String: Any])
-        if case .failure(let p) = WorkflowSpec.parse(json["workflow"] as Any) { Issue.record("\(p)") }
+        // A roadmap example elides its workflow (`{ /* … */ }`).
+        if let w = json["workflow"] as? [String: Any], !w.isEmpty || json["roadmap"] == nil,
+            case .failure(let p) = WorkflowSpec.parse(w)
+        {
+            Issue.record("\(p)")
+        }
+        if let r = json["roadmap"] {
+            roadmaps += 1
+            if case .failure(let p) = RoadmapSpec.parse(r) { Issue.record("\(p)") }
+        }
     }
+    #expect(roadmaps >= 1)
 }
 
 @Test func gateNamesAreTidied() {

@@ -131,6 +131,7 @@ Use a `"status"` command instead: an argv list for a program that prints contrac
       "dropped": "^Dropped",
       "active": "^In progress",
       "next": "^(Next|Ready)",
+      "planned": "^(Planned|Later)",
     },
   },
 }
@@ -162,9 +163,9 @@ Use a `"status"` command instead: an argv list for a program that prints contrac
 |---|---|---|
 | `file` | yes | A markdown file, relative to the repo root, read from git (contract §4c says which branch). 256 KB at most; a bigger file is reported, not cut short. |
 | `section` | no | Only read under this heading (§ Finding the text; it matches the start of the heading text, so `Stage 1` also matches `Stage 10`). |
-| `group.match` | no | A regex on heading text, at any level. A table belongs to the closest heading above it that matches, looking only at the headings it sits under (the nearest heading at each higher level). A table with no matching heading above it is skipped. A named group `name` gives the name shown; otherwise the whole heading is used. Without `group`, every table is read as one group. |
+| `group.match` | no | A regex on heading text, at any level. A table belongs to the closest heading above it that matches, looking only at the headings it sits under (the nearest heading at each higher level). A table with no matching heading above it is skipped. A named group `name` gives the name shown; otherwise the whole heading is used. A regex can have only one group called `name`, so for several kinds of heading, choose them with a lookahead: `^(?=Stage|Pool)(?:Stage \\d+: )?(?<name>[^·]+)`. Without `group`, every table is read as one group. |
 | `columns` | yes | The header text of the `num` column (required), and of `name` and `status`, matched case-insensitively after trimming. A table is read only if its header has every column named here. |
-| `status` | no | Regexes on the status text: `dropped`, `folded`, `done`, `active`, `next`, tried in that order, first match wins. A named group `date` (ISO 8601 or `YYYY-MM-DD`) on `done` dates the row. Text that matches none of them, or an empty cell, means **planned**. |
+| `status` | no | Regexes on the status text: `dropped`, `folded`, `done`, `active`, `next`, `planned`, tried in that order, first match wins. A named group `date` (ISO 8601 or `YYYY-MM-DD`) on `done` dates the row. Text that matches none of them, or an empty cell, means **planned** as well; a `planned` rule says that's meant, so `chiefstew check` lists only status text no rule explains. |
 
 Every cell is read as plain text: markdown emphasis, code and links are removed before anything is matched. Headings and tables inside ``` fences are ignored. A row's `num` must look like an ID (letters, digits, `.`, `_`, `-`, starting with a letter or digit). A row whose `num` doesn't (empty, `—`, `TBD`) is kept as **unnumbered**: it's shown in its group, never joined to status and never treated as a duplicate.
 
@@ -178,7 +179,7 @@ Every cell is read as plain text: markdown emphasis, code and links are removed 
 | `done` | Done, in its group. Newest first under **Shipped** when its whole group is done or folded. |
 | `folded` | Hidden unless asked for, with its status text as written ("Merged into 011") |
 | `dropped` | Hidden unless asked for |
-| anything else | Planned, in file order within its group, with its status text as written |
+| `planned`, or anything else | Planned, in file order within its group, with its status text as written |
 
 Groups show their own heading and counts, e.g. "Stage 2 · Checkout: 1 done, 2 to do". Chief Stew doesn't label a group as complete or under way, never reorders a plan, and never predicts a date. The status text is shown as the file writes it (one line, cut short, the whole of it on hover), because that's where a plan says things like "waits for 012".
 

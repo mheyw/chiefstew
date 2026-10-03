@@ -1,6 +1,6 @@
 # Plan: the Chief Stew window and the roadmap
 
-Status: **proposed, revised after review**, not started. The contract changes are in `event-contract.md` § 4c and `workflow.md` § Roadmap.
+Status: **phase 1 done** (parser, `check`, `roadmap` and `prompt roadmap`); phase 2 not started. The contract changes are in `event-contract.md` § 4c and `workflow.md` § Roadmap.
 
 ## Why
 
@@ -136,13 +136,24 @@ Copy follows the panel's rules: plain words, and no em dashes (headings are trim
 
 ## Phases
 
-1. **Prove the parser; no UI yet.** `RoadmapSpec`, `RoadmapReader`, the join, `chiefstew roadmap`, `check` and `prompt roadmap`, with unit tests and an invented demo roadmap in `dev/demo-repo`. **Go/no-go:** run `check` on a real repo's roadmap. Every row should be read or explained, the group tables should be read and the summary tables skipped, and the status text that matches no rule should be text the owner agrees is "planned". If the description can't express the real file, fix the format before building any UI.
-2. **The window and the panel change, together.** The window scene, the sidebar, Roadmap, Left behind, All repos, the panel's Left behind line, the footer icon, update gating and snapshots.
+1. **Prove the parser; no UI yet.** `RoadmapSpec`, `RoadmapReader`, the join, `chiefstew roadmap`, `check` and `prompt roadmap`, with unit tests. **Go/no-go:** run `check` on a real repo's roadmap. Every row should be read or explained, the group tables should be read and the summary tables skipped, and the status text that matches no rule should be text the owner agrees is "planned". If the description can't express the real file, fix the format before building any UI.
+2. **The window and the panel change, together.** A demo roadmap (`dev/demo.sh roadmap`, in a scratch git repo), the window scene, the sidebar, Roadmap, Left behind, All repos, the panel's Left behind line, the footer icon, update gating and snapshots.
 3. **Later, only if real use asks:**
    - a Builds detail tab (every phase with its times, and gate history)
    - an optional `depends`, giving ready and blocked labels
    - a `start` command template to copy, like `approve`
    - an Activity tab built from `events.jsonl`
+
+### Phase 1 result
+
+Go/no-go passed against a real repo's roadmap: 152 rows in 15 groups (done, next, planned and folded all classified, every done row dated), its four summary tables skipped with a reason, two rows without an ID listed, and nothing unexplained. What the real file changed in the format:
+
+- **An optional `planned` rule.** Without it, `check` listed every planned row with notes (most of the file) as "no rule matched". With it, `check` lists only status text nothing explains.
+- **One `name` group per regex.** Groups at different heading levels with different shapes are picked with a lookahead, `^(?=Stage|Pool)…(?<name>…)`; `workflow.md` says so.
+- **`section` includes its own heading,** so tables directly under it can belong to it as a group.
+- **Live builds the file doesn't mark in progress are normal.** A repo's scripts may write "in progress" on the build branch, so the default branch still says planned until it merges. Status wins, so these show live; the disagreement line is only for the reverse (marked in progress, not in status).
+
+The demo roadmap moved to phase 2: `dev/demo-repo` isn't a git repo, and the demo exists to show the window.
 
 ## How we'll know it works
 
