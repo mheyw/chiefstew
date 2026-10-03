@@ -90,6 +90,7 @@ struct PillButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12))
             .lineLimit(1)
+            .truncationMode(.middle)
             .padding(.horizontal, 9)
             .padding(.vertical, 2.5)
             .foregroundStyle(primary ? Color.white : Color.primary)
@@ -137,7 +138,7 @@ struct FlowRow: Layout {
         var line: CGFloat = 0
         var widest: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = view.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
             if x > 0 && x + size.width > width {
                 y += line + spacing
                 x = 0
@@ -157,7 +158,7 @@ struct FlowRow: Layout {
         var y = bounds.minY
         var line: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = view.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
             if x > bounds.minX && x + size.width > bounds.maxX {
                 y += line + spacing
                 x = bounds.minX

@@ -208,7 +208,7 @@ public struct PanelView: View {
         VStack(alignment: .leading, spacing: 6) {
             SectionTitle(text: "Problem", color: Palette.problemText)
             ForEach(board.problems) { p in
-                Row {
+                Row(label: p.repoName) {
                     Line1(dot: Palette.problem, name: Text(p.repoName), help: p.repoName) {
                         Text("status failed · since \(p.error.since.formatted(date: .omitted, time: .shortened))")
                     }
@@ -261,7 +261,7 @@ public struct PanelView: View {
                 trailing: board.sweptAt.map { "swept \(Durations.ago(now.timeIntervalSince($0)))" })
             ForEach(Array(board.leftBehind.enumerated()), id: \.element.id) { i, item in
                 if i > 0 { RowDivider() }
-                Row {
+                Row(label: item.title) {
                     HStack(spacing: 7) {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(Palette.attention)
@@ -276,18 +276,20 @@ public struct PanelView: View {
                         Actions {
                             Button("Copy: \(command)") { actions.copy(command) }
                                 .buttonStyle(PillButtonStyle())
+                                .help(command)
                         }
                     }
                 }
             }
             if !board.leftCleanup.isEmpty {
                 RowDivider()
-                Row {
+                Row(label: "To clean up") {
                     Text("To clean up").fontWeight(.semibold)
                     Actions {
                         ForEach(board.leftCleanup, id: \.self) { command in
                             Button("Copy: \(command)") { actions.copy(command) }
                                 .buttonStyle(PillButtonStyle())
+                                .help(command)
                         }
                     }
                 }
@@ -307,7 +309,7 @@ struct NeedsRow: View {
     var actions: PanelActions
 
     var body: some View {
-        Row {
+        Row(label: label) {
             Line1(dot: Palette.attention, name: name, help: label) {
                 Text(rightText).foregroundStyle(Palette.attentionText)
             }
@@ -405,7 +407,7 @@ struct BuildRowView: View {
     var actions: PanelActions
 
     var body: some View {
-        Row {
+        Row(label: "\(card.num) \(card.slug)") {
             Line1(
                 dot: card.staleSince == nil && (!card.parked || card.agentWorking) ? Palette.running : Palette.dot,
                 name: Text("\(card.num) ").monospacedDigit() + Text(card.slug),
@@ -475,13 +477,18 @@ struct BuildRowView: View {
 
 // MARK: - Layout pieces
 
+/// One item in a section. VoiceOver reads it as a named group, so its repeated buttons
+/// ("Open worktree", "Retry") say which item they belong to.
 struct Row<Content: View>: View {
+    var label: String
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) { content }
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(label)
     }
 }
 

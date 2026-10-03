@@ -66,7 +66,9 @@ private struct ReposPane: View {
                             model.wizardRepo = repo
                             model.showAddRepo = true
                         }
+                        .accessibilityLabel("Set up \(URL(fileURLWithPath: repo).lastPathComponent)")
                         Button("Remove") { model.removeRepo(repo) }
+                            .accessibilityLabel("Remove \(URL(fileURLWithPath: repo).lastPathComponent)")
                     }
                     .padding(.vertical, 2)
                 }
