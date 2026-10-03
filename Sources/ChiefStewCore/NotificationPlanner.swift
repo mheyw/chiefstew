@@ -92,25 +92,25 @@ public enum NotificationPlanner {
 
     static func notice(_ item: NeedsItem, key: String, now: Date, reminder: Bool) -> Notice {
         let waited = Durations.short(now.timeIntervalSince(item.since))
-        let who = item.card?.slug ?? item.repoName
+        let who = item.card.flatMap { $0.slug.isEmpty ? nil : $0.slug } ?? item.repoName
         switch item.kind {
         case .gate(let gate):
             let num = item.card?.num ?? ""
             return Notice(
                 id: key, title: "\(num) needs you",
-                body: "\(gate.title) gate — \(who)" + (reminder ? " · waiting \(waited)" : ""),
+                body: "\(gate.title) gate · \(who)" + (reminder ? " · waiting \(waited)" : ""),
                 open: gate.artefact ?? item.worktree, isReminder: reminder)
         case .agent(let message, let name):
             let title = item.card.map { "\($0.num) needs you" } ?? "\(name) needs you"
             return Notice(
                 id: key, title: title,
-                body: "\(message ?? "\(name) is waiting for your input") — \(who)",
+                body: "\(message ?? "\(name) is waiting for your input") · \(who)",
                 open: item.worktree, isReminder: reminder)
         case .unmerged:
             let num = item.card?.num ?? ""
             return Notice(
                 id: key, title: "\(num) isn't merged",
-                body: "Closed \(waited) ago — \(who). Merge it today.", open: item.worktree,
+                body: "\(who) closed \(waited) ago. Merge it today.", open: item.worktree,
                 isReminder: reminder)
         }
     }

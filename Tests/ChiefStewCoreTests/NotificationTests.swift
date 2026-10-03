@@ -20,7 +20,7 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
     let first = NotificationPlanner.plan(
         board: gateBoard(), ledger: ledger, settings: Preferences(), now: t0, loaded: ["/r"])
     #expect(first.post.map(\.title) == ["174 needs you"])
-    #expect(first.post[0].body == "Plan gate — checkout_flow")
+    #expect(first.post[0].body == "Plan gate · checkout_flow")
     #expect(first.post[0].open == "/wt/174/plan.md")
     ledger = first.ledger
     let again = NotificationPlanner.plan(
@@ -39,7 +39,7 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
     #expect(reminder.post.count == 1)
     #expect(reminder.post[0].isReminder)
     #expect(reminder.post[0].id == first.post[0].id)
-    #expect(reminder.post[0].body == "Plan gate — checkout_flow · waiting 30 min")
+    #expect(reminder.post[0].body == "Plan gate · checkout_flow · waiting 30 min")
 }
 
 @Test func remindersCanBeTurnedOff() {
@@ -88,7 +88,7 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
     let first = NotificationPlanner.plan(
         board: board, ledger: NoticeLedger(), settings: Preferences(), now: t0, loaded: ["/r"])
     #expect(first.post.map(\.title) == ["Claude needs you"])
-    #expect(first.post[0].body == "Allow Bash? — elsewhere")
+    #expect(first.post[0].body == "Allow Bash? · elsewhere")
     let later = t0 + 3 * 3600
     let again = NotificationPlanner.plan(
         board: Board.make(repos: [], agents: [agent], now: later), ledger: first.ledger,
@@ -144,7 +144,7 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
         board: board, ledger: NoticeLedger(), settings: Preferences(), now: t0, loaded: [], registered: [])
     let notice = try! #require(plan.post.first)
     #expect(notice.title == "012 needs you")
-    #expect(notice.body == "Plan gate — thing")
+    #expect(notice.body == "Plan gate · thing")
     #expect(notice.open == nil)
 
     state.apply(Event(ts: t0 + 60, kind: "gate.approved", repo: "/Users/me/other", build: "012", gate: "plan"))
@@ -152,4 +152,13 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
     let next = NotificationPlanner.plan(
         board: after, ledger: plan.ledger, settings: Preferences(), now: t0 + 60, loaded: [], registered: [])
     #expect(next.withdraw == [notice.id])
+}
+
+@Test func aGateWithNoSlugNamesItsRepo() {
+    var state = EventState()
+    state.apply(Event(ts: t0, kind: "gate.waiting", repo: "/Users/me/other", build: "012", gate: "plan"))
+    let board = Board.make(repos: [], agents: [], eventGates: state.gates.current(now: t0), now: t0)
+    let plan = NotificationPlanner.plan(
+        board: board, ledger: NoticeLedger(), settings: Preferences(), now: t0, loaded: [], registered: [])
+    #expect(plan.post.first?.body == "Plan gate · other")
 }

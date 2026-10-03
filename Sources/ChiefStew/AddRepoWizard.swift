@@ -119,7 +119,7 @@ struct AddRepoWizard: View {
                     Spacer()
                     Button("Update hooks") { hooksError = model.installHooks() }
                 case .notInstalled:
-                    Text("Adds 5 hooks to ~/.claude/settings.json (backed up first).").font(.callout)
+                    Text("Adds \(ClaudeHooks.events.count) hooks to ~/.claude/settings.json (backed up first).").font(.callout)
                     Spacer()
                     Button("Install hooks") { hooksError = model.installHooks() }
                         .buttonStyle(.borderedProminent)

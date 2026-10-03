@@ -195,8 +195,8 @@ public struct PanelView: View {
             SectionTitle(text: "Problem", color: Palette.problem)
             ForEach(board.problems) { p in
                 Row {
-                    Line1(dot: Palette.problem, name: Text("\(p.repoName) — status failed")) {
-                        Text("since \(p.error.since.formatted(date: .omitted, time: .shortened))")
+                    Line1(dot: Palette.problem, name: Text(p.repoName), help: p.repoName) {
+                        Text("status failed · since \(p.error.since.formatted(date: .omitted, time: .shortened))")
                     }
                     Text(p.error.message)
                         .font(.system(size: 11.5, design: .monospaced))
@@ -292,7 +292,7 @@ struct NeedsRow: View {
 
     var body: some View {
         Row {
-            Line1(dot: Palette.attention, name: name) {
+            Line1(dot: Palette.attention, name: name, help: label) {
                 Text(rightText).foregroundStyle(Palette.attention)
             }
             switch item.kind {
@@ -301,7 +301,7 @@ struct NeedsRow: View {
                     if let dots = item.card?.dots, !dots.isEmpty {
                         PhaseDotsView(dots: dots).padding(.trailing, 6)
                     }
-                    Text("\(gate.title) ready — waiting on your sign-off")
+                    Text("\(gate.title) ready, waiting on your sign-off")
                 }
                 .indented()
                 Actions {
@@ -336,10 +336,19 @@ struct NeedsRow: View {
                     worktreeButton(primary: item.session == nil)
                 }
             case .unmerged:
-                Text("\(item.card?.state ?? "Closed") — not merged yet").indented()
+                Text("\(item.card?.state ?? "Closed") · not merged yet").indented()
                 Actions { worktreeButton(primary: false) }
             }
         }
+    }
+
+    /// The row's identity, for VoiceOver and the name's tooltip.
+    private var label: String {
+        guard let card = item.card else {
+            if case .agent(_, let name) = item.kind { return "\(name) in \(item.repoName)" }
+            return item.repoName
+        }
+        return card.slug.isEmpty ? "\(card.num) in \(item.repoName)" : "\(card.num) \(card.slug)"
     }
 
     private var name: Text {
@@ -384,7 +393,8 @@ struct BuildRowView: View {
             Line1(
                 dot: card.staleSince == nil && (!card.parked || card.agentWorking) ? Palette.running : Palette.dot,
                 name: Text("\(card.num) ").monospacedDigit() + Text(card.slug),
-                tag: card.parked ? (card.agentWorking ? "parked · agent active" : "parked") : nil
+                tag: card.parked ? (card.agentWorking ? "parked · agent active" : "parked") : nil,
+                help: "\(card.num) \(card.slug)"
             ) {
                 if card.parked {
                     Text(card.agentWorking ? "parked · agent active" : "parked")
@@ -467,12 +477,15 @@ struct Line1<Trailing: View>: View {
     var dot: Color
     var name: Text
     var tag: String?
+    /// Tooltip for the name, which truncates.
+    var help: String?
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(spacing: 7) {
             Circle().fill(dot).frame(width: 8, height: 8)
             name.fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                .help(help ?? "")
             if let tag {
                 Text(tag)
                     .font(.system(size: 10.5, weight: .medium))
@@ -481,8 +494,10 @@ struct Line1<Trailing: View>: View {
                     .foregroundStyle(Color.accentColor)
             }
             Spacer(minLength: 8)
+            // The name truncates before what's on the right, which carries the row's state.
             trailing.font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
                 .lineLimit(1)
+                .layoutPriority(1)
         }
     }
 }

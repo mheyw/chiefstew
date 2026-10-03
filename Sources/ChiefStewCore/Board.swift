@@ -395,7 +395,7 @@ extension Board {
                     id: "\(repo.path)#routes", repoName: repo.name,
                     title: n == 1 ? "1 stray route" : "\(n) stray routes",
                     details: sweep.routes.map { r in
-                        r.reason.map { "\(r.hostname) — \($0)" } ?? r.hostname
+                        r.reason.map { "\(r.hostname) · \($0)" } ?? r.hostname
                     },
                     command: nil))
         }
