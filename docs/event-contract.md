@@ -21,6 +21,7 @@ A repo can do any subset:
 | A status command | Its builds as well: phases, gates waiting for sign-off, tasks, parked and unmerged work |
 | A sweep command | Leftovers too: leaked databases, stray processes and routes |
 | Events from its scripts | Gates and phase changes appear at once, not at the next poll |
+| A roadmap description | The plan around its builds: what's shipped, what's marked next and what's still to come (§4c) |
 
 ## 1. Locations
 
@@ -162,6 +163,7 @@ Status knows nothing about agent sessions, so Chief Stew keeps a small per-`sess
 - argv[0] `node` means the owner's Node, found through their login shell. A program containing `/` is taken relative to the repo. Anything else is looked up on the owner's login `PATH`.
 - `sweep` and `name` are optional.
 - Use `workflow` or `status`, not both.
+- `roadmap` (optional) can sit alongside either, or neither (§4c).
 - No `.chiefstew.json`: the repo is watched for **agents only**.
 
 **Commands must be read-only.** No network (no `git fetch`), no writes, no locks. Chief Stew sets `GIT_OPTIONAL_LOCKS=0` and `NO_COLOR=1`, and kills a status call after 20 s and a sweep after 60 s.
@@ -229,6 +231,36 @@ The status command prints one JSON object to stdout and nothing else:
 | `branchURL` | no | The branch's web page, offered as "Open on GitHub" when there's no checkout. |
 
 Anything optional can be left out: a row with only the required fields still shows. A row that fails to decode is skipped and counted, and never takes down the rest.
+
+### 4c. Roadmap (optional)
+
+Status covers builds in flight only. A repo that writes its plan down (a markdown file listing builds that are done, under way and still to come) can point Chief Stew at it with a top-level `roadmap` description in `.chiefstew.json`:
+
+```json5
+{
+  "v": 1,
+  "workflow": { /* … */ },
+  "roadmap": {
+    "file": "docs/roadmap.md",
+    "group": { "match": "^(?<name>Stage \\d+|Anytime pool)" },
+    "columns": { "num": "#", "name": "Build", "status": "Status" },
+    "status": {
+      "done": "^Done(?: (?<date>[\\d-]+))?",
+      "folded": "^Merged into",
+      "dropped": "^Dropped",
+      "active": "^In progress",
+      "next": "^(Next|Ready)",
+    },
+  },
+}
+```
+
+- It's data, like `workflow`: nothing runs. The format is in [workflow.md](workflow.md#roadmap-the-plan-around-the-builds), and `chiefstew check` explains what was read, row by row.
+- **Which version of the file:** the one on the branch status judges "merged" against. That's origin's default branch as last fetched when it contains the local one, else the local default branch (origin's default branch name, else `main`, else `master`). It's never whatever is checked out, so uncommitted edits and build branches don't change it. When it comes from origin, it's as fresh as the last fetch, and Chief Stew says so. If there's no default branch, the roadmap reports a problem.
+- **Joining to status:** rows are joined to status by `num`, compared exactly as status reports it. One row matches every status row with that `num` (one build, several checkouts, §3.3). A build that status reports is shown live from status, whatever the file says about it. The file supplies only what status can't: builds not started, builds finished, what's marked next, and how it's grouped.
+- **Errors stay separate:** a broken or unreadable roadmap is reported on its own and never stops status.
+- **A status command can't supply a roadmap** in v1. A repo using `status` describes its roadmap with this block like any other, and Chief Stew reads the file with git itself.
+- **`chiefstew roadmap` is for diagnosis only:** it prints what Chief Stew read as JSON. That output isn't part of the contract and may change.
 
 ## 5. Sweep (optional)
 

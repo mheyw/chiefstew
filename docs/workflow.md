@@ -112,6 +112,80 @@ Dates can be ISO 8601, `YYYY-MM-DD`, or `YYYY-MM-DD HH:MM` (local time).
 
 Use a `"status"` command instead: an argv list for a program that prints contract JSON (`docs/event-contract.md` § 4). Use one or the other, not both.
 
+## Roadmap: the plan around the builds
+
+`workflow` finds builds in flight. A top-level `roadmap` (next to `workflow` or `status`, or on its own) says where the repo's plan is written down, so Chief Stew can also show what's finished, what's marked next and what's still to come. It's optional, and nothing else depends on it. A `.chiefstew.json` with only a `roadmap` watches the repo's agents (no build status) and shows its roadmap.
+
+```json5
+{
+  "v": 1,
+  "workflow": { /* … */ },
+  "roadmap": {
+    // docs/roadmap.md: "## Stage 2 · Checkout" headings and an "## Anytime pool", each with a table
+    "file": "docs/roadmap.md",
+    "group": { "match": "^(?<name>Stage \\d+|Anytime pool)" },
+    "columns": { "num": "#", "name": "Build", "status": "Status" },
+    "status": {
+      "done": "^Done(?: (?<date>[\\d-]+))?",
+      "folded": "^Merged into",
+      "dropped": "^Dropped",
+      "active": "^In progress",
+      "next": "^(Next|Ready)",
+    },
+  },
+}
+```
+
+```markdown
+## Where we are
+
+### Sequencing
+
+| #   | Build         | Status      |    ← skipped: no heading above it matches group.match
+| --- | ------------- | ----------- |
+| 013 | saved_cards   | Next        |
+
+## Stage 2 · Checkout
+
+| #   | Build          | Status                       |
+| --- | -------------- | ---------------------------- |
+| 011 | cart_summary   | **Done 2026-09-12**          |
+| 012 | checkout_flow  | In progress                  |
+| 013 | saved_cards    | Next (waits for 012)         |
+| 014 | gift_wrap      | Merged into 011              |
+| —   | promo_codes    | idea, not numbered yet       |
+```
+
+### Keys
+
+| Key | Required | Meaning |
+|---|---|---|
+| `file` | yes | A markdown file, relative to the repo root, read from git (contract §4c says which branch). 256 KB at most; a bigger file is reported, not cut short. |
+| `section` | no | Only read under this heading (§ Finding the text; it matches the start of the heading text, so `Stage 1` also matches `Stage 10`). |
+| `group.match` | no | A regex on heading text, at any level. A table belongs to the closest heading above it that matches, looking only at the headings it sits under (the nearest heading at each higher level). A table with no matching heading above it is skipped. A named group `name` gives the name shown; otherwise the whole heading is used. Without `group`, every table is read as one group. |
+| `columns` | yes | The header text of the `num` column (required), and of `name` and `status`, matched case-insensitively after trimming. A table is read only if its header has every column named here. |
+| `status` | no | Regexes on the status text: `dropped`, `folded`, `done`, `active`, `next`, tried in that order, first match wins. A named group `date` (ISO 8601 or `YYYY-MM-DD`) on `done` dates the row. Text that matches none of them, or an empty cell, means **planned**. |
+
+Every cell is read as plain text: markdown emphasis, code and links are removed before anything is matched. Headings and tables inside ``` fences are ignored. A row's `num` must look like an ID (letters, digits, `.`, `_`, `-`, starting with a letter or digit). A row whose `num` doesn't (empty, `—`, `TBD`) is kept as **unnumbered**: it's shown in its group, never joined to status and never treated as a duplicate.
+
+### What each row becomes
+
+| In the file | In Chief Stew |
+|---|---|
+| A `num` that status also reports | **Now**, live from status: phases, gates, agents. The file's status is ignored. Parked builds and teammates' builds keep their labels. |
+| `active`, but status doesn't report it | "In progress in the plan, not in status": the file and status disagree, so it's shown under Now and flagged. |
+| `next` | **Up next**, in file order, with its status text as written |
+| `done` | Done, in its group. Newest first under **Shipped** when its whole group is done or folded. |
+| `folded` | Hidden unless asked for, with its status text as written ("Merged into 011") |
+| `dropped` | Hidden unless asked for |
+| anything else | Planned, in file order within its group, with its status text as written |
+
+Groups show their own heading and counts, e.g. "Stage 2 · Checkout: 1 done, 2 to do". Chief Stew doesn't label a group as complete or under way, never reorders a plan, and never predicts a date. The status text is shown as the file writes it (one line, cut short, the whole of it on hover), because that's where a plan says things like "waits for 012".
+
+Builds found with `builds.from: worktrees` use the worktree's folder name as their `num`, so they join to roadmap rows only if folder names and row IDs agree.
+
+If a `num` appears twice in groups that are read, the first row wins, and both `chiefstew check` and the roadmap say where the second one is. `chiefstew check` also lists, per group, the rows read; the tables skipped and why; status text that matched no rule; unnumbered rows; and unknown keys, including misspelled top-level ones (`roadmp`).
+
 ## Safety
 
-The engine only reads files inside the repo and its worktrees (256 KB at most each) and runs a fixed set of read-only git commands (`worktree list`, `for-each-ref`, `log`, `show`, `ls-tree`, `merge-base`, `rev-list`) with `GIT_OPTIONAL_LOCKS=0`. Nothing from the repo is executed.
+The engine only reads files inside the repo and its worktrees (256 KB at most each) and runs a fixed set of read-only git commands (`worktree list`, `for-each-ref`, `log`, `show`, `cat-file`, `ls-tree`, `rev-parse`, `symbolic-ref`, `config`, `remote`, `merge-base`, `merge-tree`, `diff`, `rev-list`) with `GIT_OPTIONAL_LOCKS=0`. Nothing from the repo is executed.
