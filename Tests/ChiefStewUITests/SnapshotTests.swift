@@ -119,7 +119,29 @@ let states: [(String, Board)] = [
         ])
     ),
     ("10-sweep-failed", sweepFailed()),
+    ("11-teammates", teammates()),
 ]
+
+/// A teammate's build closed but not merged, and one of yours known only from origin.
+func teammates() -> Board {
+    var theirs = BuildRow(
+        num: "181", slug: "editor_tidy", branch: "build/181-editor-tidy", state: "Closed 2026-10-03",
+        lastCommitAt: ago(25), flags: ["closed-unmerged"])
+    theirs.mine = false
+    theirs.author = "Dana"
+    theirs.onlyOnOrigin = true
+    theirs.branchURL = "https://github.com/acme/my-app/tree/build/181-editor-tidy"
+    var remote = b175
+    remote.branch = "build/175-copy-review"
+    remote.worktree = nil
+    remote.progress = nil  // the engine only links progress in a checkout
+    remote.onlyOnOrigin = true
+    var report = StatusReport(builds: [b173, remote, theirs])
+    report.fetchedAt = ago(12)
+    return Board.make(
+        repos: [RepoSnapshot(path: repo, status: report, statusAt: ago(0.2))], agents: [], claude: claudeSessions,
+        now: now)
+}
 
 func sweepFailed() -> Board {
     var snap = RepoSnapshot(path: repo, status: StatusReport(builds: [b173]), statusAt: ago(0.2))
@@ -176,10 +198,10 @@ let outDir: URL = {
     #expect(
         titles == [
             nil, "173 Implement 6/11 +1", "3 need you", "173 Implement 6/11", "173 Implement 6/11",
-            nil, nil, nil, "173 Implement 6/11", "173 Implement 6/11",
+            nil, nil, nil, "173 Implement 6/11", "173 Implement 6/11", "173 Implement 6/11 +1",
         ])
     #expect(
-        states.map { $0.1.menu.warning } == [false, false, false, true, true, false, false, true, false, false])
+        states.map { $0.1.menu.warning } == [false, false, false, true, true, false, false, true, false, false, false])
 }
 
 @Test func approveCommandIsSelfContained() {

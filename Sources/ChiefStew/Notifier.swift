@@ -47,7 +47,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = notice.title
         content.body = notice.body
-        content.sound = notice.isReminder ? nil : .default
+        content.sound = notice.isReminder || notice.passive ? nil : .default
+        if notice.passive { content.interruptionLevel = .passive }
         content.threadIdentifier = "chiefstew"
         if let open = notice.open { content.userInfo = ["open": open] }
         center.add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil)) {

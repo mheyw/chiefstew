@@ -211,10 +211,11 @@ The status command prints one JSON object to stdout and nothing else:
 | `v`, `builds` | yes | `builds` holds in-flight work only. Leave out merged or finished builds. |
 | `num`, `slug`, `branch`, `state`, `lastCommitAt`, `merged` | yes | `num` is a short ID shown first ("012"). `state` is one plain-text line. `lastCommitAt` is ISO 8601, or unix seconds. |
 | `generatedAt`, `repo` | no | |
+| `fetchedAt` | no | When the clone last fetched from origin. Rows marked `onlyOnOrigin` are as fresh as this, since Chief Stew never fetches. |
 | `worktree` | no | The checkout's path, or `null` if the branch isn't checked out. It's what agent sessions are matched against. |
 | `worktrees` | no | Other checkouts working on this build (e.g. an agent's worktree on its own branch); agent sessions there count for it too. |
 | `behind` | no | Commits behind the main branch, from local refs. |
-| `flags` | no | `closed-unmerged` (finished but not merged: **needs you**), `idle`, `behind`. |
+| `flags` | no | `closed-unmerged` (finished but not merged: **needs you**, or, for a teammate's build, shown under Teammates with one quiet notice), `idle`, `behind`. |
 | `lane` | no | A repo-defined route. |
 | `parked` | no | `true`: set aside on purpose. It's dimmed, never in the menu bar, and its gates and merges don't need you. If absent, a `state` starting with "Parked" counts. |
 | `phases` | no | In order. `status` is `done`, `active` or `pending`. `skipped: true` hides a phase that isn't on this build's route. Times can be ISO, `YYYY-MM-DD` or local `YYYY-MM-DD HH:MM`. |
@@ -222,6 +223,10 @@ The status command prints one JSON object to stdout and nothing else:
 | `tasks` | no | `done` / `total`. |
 | `urls` | no | Name → URL; the first is offered as "Open app". |
 | `progress` | no | A file to open for detail. |
+| `author` | no | Who wrote the build's newest commit of its own. |
+| `mine` | no | `true` if this clone's git user (`user.email`) wrote any of the build's commits, `false` if not. Absent when that can't be told; the build then counts as yours. |
+| `onlyOnOrigin` | no | `true`: the branch exists only on origin, so there's nothing checked out here. |
+| `branchURL` | no | The branch's web page, offered as "Open on GitHub" when there's no checkout. |
 
 Anything optional can be left out: a row with only the required fields still shows. A row that fails to decode is skipped and counted, and never takes down the rest.
 

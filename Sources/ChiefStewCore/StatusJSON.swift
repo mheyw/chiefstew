@@ -7,6 +7,7 @@ public enum StatusJSON {
         let iso = ISO8601DateFormatter()
         var out: [String: Any] = ["v": 1, "generatedAt": iso.string(from: now)]
         if let repo = report.repo { out["repo"] = repo }
+        if let t = report.fetchedAt { out["fetchedAt"] = iso.string(from: t) }
         out["builds"] = report.builds.map { b -> [String: Any] in
             var row: [String: Any] = [
                 "num": b.num, "slug": b.slug, "branch": b.branch, "state": b.state,
@@ -41,6 +42,10 @@ public enum StatusJSON {
             if let t = b.tasks { row["tasks"] = ["done": t.done, "total": t.total] }
             if !b.urls.isEmpty { row["urls"] = b.urls }
             if let v = b.progress { row["progress"] = v }
+            if let v = b.author { row["author"] = v }
+            if let v = b.mine { row["mine"] = v }
+            if let v = b.onlyOnOrigin { row["onlyOnOrigin"] = v }
+            if let v = b.branchURL { row["branchURL"] = v }
             return row
         }
         return out

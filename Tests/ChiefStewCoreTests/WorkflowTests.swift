@@ -375,3 +375,72 @@ private let typical = """
     #expect(rows[0].phases?.map { $0.skipped == true } == [false, false, false])
     #expect(rows[1].phases?.map { $0.skipped == true } == [false, true, false])  // the default's route
 }
+
+private func commit(_ dir: URL, as name: String, _ email: String, _ message: String) throws {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    p.arguments = ["-C", dir.path, "commit", "-q", "-m", message]
+    p.environment = [
+        "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name,
+        "GIT_COMMITTER_EMAIL": email, "HOME": NSTemporaryDirectory(),
+    ]
+    p.standardOutput = FileHandle.nullDevice
+    try p.run()
+    p.waitUntilExit()
+}
+
+/// Teammates merge on origin while the local main sits still: merged and squash-merged builds
+/// leave the list, a teammate's open build is marked as theirs, and origin-only rows say so.
+@Test func originsMainCountsAndAuthorsAreKnown() throws {
+    let (repo, _) = try sampleRepo()
+    let origin = repo.deletingLastPathComponent().appendingPathComponent("origin.git")
+    try run(repo.deletingLastPathComponent(), "init", "-q", "--bare", origin.path)
+    try run(repo, "remote", "add", "origin", origin.path)
+    try run(repo, "config", "user.email", "me@example.com")
+    try run(repo, "push", "-q", "origin", "main")
+    try run(repo, "remote", "set-head", "origin", "main")
+
+    // Three origin-only builds: merged, squash-merged, and a teammate's still open; one of mine.
+    for (slug, who) in [("merged", "Dana"), ("squashed", "Dana"), ("theirs", "Dana"), ("mine", "Me")] {
+        try run(repo, "checkout", "-q", "-b", "feature/\(slug)", "main")
+        try write(repo, "\(slug).txt", slug)
+        try run(repo, "add", ".")
+        try commit(repo, as: who, who == "Me" ? "me@example.com" : "dana@example.com", slug)
+        try run(repo, "push", "-q", "origin", "feature/\(slug)")
+        try run(repo, "checkout", "-q", "main")
+        try run(repo, "branch", "-q", "-D", "feature/\(slug)")
+    }
+    // On origin's main: a real merge and a squash. The local main is left behind.
+    try run(repo, "checkout", "-q", "-b", "upstream", "main")
+    try run(repo, "merge", "-q", "--no-ff", "-m", "merge", "origin/feature/merged")
+    try run(repo, "merge", "-q", "--squash", "origin/feature/squashed")
+    try commit(repo, as: "Dana", "dana@example.com", "squashed (#2)")
+    try run(repo, "push", "-q", "origin", "upstream:main")
+    try run(repo, "checkout", "-q", "main")
+    try run(repo, "fetch", "-q", "origin")
+
+    let spec = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}"]]).get()
+    let r = WorkflowEngine(repo: repo.path, spec: spec).runExplained()
+    let slugs = r.report.builds.map(\.slug)
+    #expect(!slugs.contains("merged") && !slugs.contains("squashed"))
+    #expect(r.skipped.contains("origin/feature/merged: already merged into origin/main"))
+    #expect(r.skipped.contains("origin/feature/squashed: already merged into origin/main"))
+    let theirs = try #require(r.report.builds.first { $0.slug == "theirs" })
+    #expect(theirs.author == "Dana" && theirs.mine == false && theirs.onlyOnOrigin == true)
+    #expect(r.report.builds.first { $0.slug == "mine" }?.mine == true)
+    #expect(r.report.fetchedAt != nil)
+}
+
+@Test func branchLinksForGitHubRemotes() {
+    let link = "https://github.com/acme/app/tree/build/12-x"
+    #expect(WorkflowEngine.branchURL(origin: "git@github.com:acme/app.git", branch: "build/12-x") == link)
+    #expect(WorkflowEngine.branchURL(origin: "https://github.com/acme/app", branch: "build/12-x") == link)
+    #expect(WorkflowEngine.branchURL(origin: "ssh://git@github.com/acme/app.git", branch: "build/12-x") == link)
+    // An ssh host alias (one per GitHub account) resolves to github.com.
+    #expect(
+        WorkflowEngine.branchURL(origin: "git@work:acme/app.git", branch: "build/12-x") {
+            $0 == "work" ? "github.com" : $0
+        } == link)
+    #expect(WorkflowEngine.branchURL(origin: "git@gitlab.com:acme/app.git", branch: "x") == nil)
+    #expect(WorkflowEngine.branchURL(origin: "/srv/git/app.git", branch: "x") == nil)
+}

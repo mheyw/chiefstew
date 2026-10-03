@@ -7,6 +7,8 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var notifyGates = true
     public var notifyAgents = true
     public var notifyUnmerged = true
+    /// A teammate's build is closed but not merged: one quiet notice.
+    public var notifyTeam = true
     /// Re-notify a still-waiting gate this often. 0 turns reminders off.
     public var reminderMinutes = 30
     /// Bundle ID of the app "Open worktree" uses; nil is Finder.
@@ -21,7 +23,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case notifyGates, notifyAgents, notifyUnmerged, reminderMinutes, worktreeApp, nodePath
+        case notifyGates, notifyAgents, notifyUnmerged, notifyTeam, reminderMinutes, worktreeApp, nodePath
         case updateChannel, updateMode
     }
 
@@ -32,6 +34,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         notifyAgents = (try? c.decodeIfPresent(Bool.self, forKey: .notifyAgents)) ?? nil ?? d.notifyAgents
         notifyUnmerged =
             (try? c.decodeIfPresent(Bool.self, forKey: .notifyUnmerged)) ?? nil ?? d.notifyUnmerged
+        notifyTeam = (try? c.decodeIfPresent(Bool.self, forKey: .notifyTeam)) ?? nil ?? d.notifyTeam
         reminderMinutes =
             (try? c.decodeIfPresent(Int.self, forKey: .reminderMinutes)) ?? nil ?? d.reminderMinutes
         worktreeApp = (try? c.decodeIfPresent(String.self, forKey: .worktreeApp)) ?? nil

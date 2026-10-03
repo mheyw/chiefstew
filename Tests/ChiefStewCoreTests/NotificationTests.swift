@@ -162,3 +162,50 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
         board: board, ledger: NoticeLedger(), settings: Preferences(), now: t0, loaded: [], registered: [])
     #expect(plan.post.first?.body == "Plan gate · other")
 }
+
+private func teamBoard(mine: Bool?) -> Board {
+    var row = BuildRow(
+        num: "181", slug: "tidy", state: "Closed 2026-10-03", lastCommitAt: t0, flags: ["closed-unmerged"])
+    row.mine = mine
+    row.author = "Dana"
+    return Board.make(repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: [row]))], agents: [], now: t0)
+}
+
+@Test func aTeammatesUnmergedBuildIsInfoNotNeedsYou() {
+    let theirs = teamBoard(mine: false)
+    #expect(theirs.needsYou.isEmpty && theirs.team.count == 1)
+    #expect(theirs.menu.attention == false)
+    // Authorship unknown (no git identity): it stays yours.
+    #expect(teamBoard(mine: nil).needsYou.count == 1)
+}
+
+@Test func aTeammatesUnmergedBuildNotifiesOnceQuietlyThenGoes() {
+    let board = teamBoard(mine: false)
+    let first = NotificationPlanner.plan(
+        board: board, ledger: NoticeLedger(), settings: Preferences(), now: t0, loaded: ["/r"])
+    let notice = try! #require(first.post.first)
+    #expect(notice.passive && notice.title == "181 closed, not merged")
+    #expect(notice.body == "Dana closed tidy just now. It isn't in main yet.")
+    // No reminders.
+    let later = NotificationPlanner.plan(
+        board: board, ledger: first.ledger, settings: Preferences(), now: t0 + 3 * 3600, loaded: ["/r"])
+    #expect(later.post.isEmpty && later.withdraw.isEmpty)
+    // After a day it's taken down once, and not sent again.
+    let day = NotificationPlanner.plan(
+        board: board, ledger: later.ledger, settings: Preferences(), now: t0 + 25 * 3600, loaded: ["/r"])
+    #expect(day.withdraw == [notice.id] && day.post.isEmpty)
+    let after = NotificationPlanner.plan(
+        board: board, ledger: day.ledger, settings: Preferences(), now: t0 + 26 * 3600, loaded: ["/r"])
+    #expect(after.withdraw.isEmpty && after.post.isEmpty)
+    // Merged: gone from the board, so withdrawn and forgotten.
+    let merged = NotificationPlanner.plan(
+        board: Board.make(repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: []))], agents: [], now: t0),
+        ledger: first.ledger, settings: Preferences(), now: t0 + 3600, loaded: ["/r"])
+    #expect(merged.withdraw == [notice.id] && merged.ledger.sent.isEmpty)
+    // And it can be switched off.
+    var quiet = Preferences()
+    quiet.notifyTeam = false
+    #expect(
+        NotificationPlanner.plan(board: board, ledger: NoticeLedger(), settings: quiet, now: t0, loaded: ["/r"])
+            .post.isEmpty)
+}

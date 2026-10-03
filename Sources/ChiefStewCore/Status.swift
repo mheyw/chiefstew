@@ -22,6 +22,8 @@ public enum ReportError: Error, Equatable {
 public struct StatusReport: Decodable, Sendable, Equatable {
     public var repo: String?
     public var builds: [BuildRow]
+    /// When the clone last fetched from origin: how fresh rows only on origin are.
+    public var fetchedAt: Date?
     /// Rows that failed to decode and were left out.
     public var skippedRows: Int
 
@@ -31,13 +33,14 @@ public struct StatusReport: Decodable, Sendable, Equatable {
         self.skippedRows = skippedRows
     }
 
-    enum CodingKeys: String, CodingKey { case v, repo, builds }
+    enum CodingKeys: String, CodingKey { case v, repo, builds, fetchedAt }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let v = try c.decode(Int.self, forKey: .v)
         guard v == 1 else { throw ReportError.wrongVersion(v) }
         repo = c.lenient(String.self, .repo)
+        fetchedAt = c.lenient(FlexibleDate.self, .fetchedAt)?.date
         var list = try c.nestedUnkeyedContainer(forKey: .builds)
         var rows: [BuildRow] = []
         var skipped = 0
@@ -74,6 +77,14 @@ public struct BuildRow: Decodable, Sendable, Equatable {
     public var progress: String?
     /// Set aside on purpose. Absent: a `state` starting with "Parked" counts.
     public var parkedFlag: Bool?
+    /// Who wrote the build's newest commit of its own.
+    public var author: String?
+    /// Whether this clone's git user wrote any of its commits; nil when that can't be told.
+    public var mine: Bool?
+    /// The branch exists only on origin (a teammate's, or another machine's).
+    public var onlyOnOrigin: Bool?
+    /// The branch's web page, when origin is a known host.
+    public var branchURL: String?
 
     public init(
         num: String, slug: String, branch: String = "", state: String = "",
@@ -102,7 +113,7 @@ public struct BuildRow: Decodable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case num, slug, branch, state, lastCommitAt, merged, worktree, worktrees, behind, flags, lane,
-            phases, gates, tasks, urls, progress, parked
+            phases, gates, tasks, urls, progress, parked, author, mine, onlyOnOrigin, branchURL
     }
 
     public init(from decoder: Decoder) throws {
@@ -124,6 +135,10 @@ public struct BuildRow: Decodable, Sendable, Equatable {
         urls = c.lenient([String: String].self, .urls) ?? [:]
         progress = c.lenient(String.self, .progress)
         parkedFlag = c.lenient(Bool.self, .parked)
+        author = c.lenient(String.self, .author)
+        mine = c.lenient(Bool.self, .mine)
+        onlyOnOrigin = c.lenient(Bool.self, .onlyOnOrigin)
+        branchURL = c.lenient(String.self, .branchURL)
     }
 
     public var isParked: Bool {

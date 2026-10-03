@@ -128,6 +128,10 @@ private struct NotificationsPane: View {
                 Toggle("A gate is waiting for sign-off", isOn: $model.settings.notifyGates)
                 Toggle("An agent needs input", isOn: $model.settings.notifyAgents)
                 Toggle("A closed build isn't merged", isOn: $model.settings.notifyUnmerged)
+                Toggle("A teammate's closed build isn't merged", isOn: $model.settings.notifyTeam)
+                Text("Teammates' builds notify quietly: straight to Notification Centre, with no banner or sound, and gone after a day.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section {
                 Picker("Remind me while a gate waits", selection: $model.settings.reminderMinutes) {

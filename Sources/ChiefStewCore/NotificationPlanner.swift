@@ -9,13 +9,18 @@ public struct Notice: Sendable, Equatable {
     /// A file or folder to open when the notification is clicked.
     public var open: String?
     public var isReminder: Bool
+    /// Worth knowing, not acting on: straight to Notification Centre, no banner or sound.
+    public var passive: Bool
 
-    public init(id: String, title: String, body: String, open: String?, isReminder: Bool) {
+    public init(
+        id: String, title: String, body: String, open: String?, isReminder: Bool, passive: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.body = body
         self.open = open
         self.isReminder = isReminder
+        self.passive = passive
     }
 }
 
@@ -23,12 +28,17 @@ public struct Notice: Sendable, Equatable {
 /// re-notify everything that was already waiting.
 public struct NoticeLedger: Codable, Equatable, Sendable {
     public var sent: [String: Date] = [:]
+    /// Passive notices already taken down for age, so they aren't withdrawn again or re-sent.
+    public var expired: Set<String>?
 
     public init() {}
 }
 
-/// Board → notifications. Pure. Only needs-you items notify, never progress.
+/// Board → notifications. Pure. Needs-you items notify, never progress. A teammate's unmerged
+/// build gets one passive notice that goes away after `teamNoticeLifetime`.
 public enum NotificationPlanner {
+    public static let teamNoticeLifetime: TimeInterval = 24 * 3600
+
     public struct Plan: Sendable, Equatable {
         public var post: [Notice] = []
         /// Notification IDs whose item has resolved; withdraw them from Notification Centre.
@@ -70,13 +80,30 @@ public enum NotificationPlanner {
             plan.ledger.sent[key] = now
         }
 
+        for item in board.team {
+            let key = key(item)
+            live.insert(key)
+            guard settings.notifyTeam else { continue }
+            if let sent = ledger.sent[key] {
+                if now.timeIntervalSince(sent) >= teamNoticeLifetime, ledger.expired?.contains(key) != true {
+                    plan.withdraw.append(key)
+                    plan.ledger.expired = (plan.ledger.expired ?? []).union([key])
+                }
+                continue
+            }
+            plan.post.append(teamNotice(item, key: key, now: now))
+            plan.ledger.sent[key] = now
+        }
+
         for key in ledger.sent.keys where !live.contains(key) {
             let repo = key.components(separatedBy: "#").first ?? ""
             let fromEvents = registered.map { !$0.contains(repo) } ?? false
             guard key.hasPrefix("agent-") || loaded.contains(repo) || fromEvents else { continue }
             plan.withdraw.append(key)
             plan.ledger.sent[key] = nil
+            plan.ledger.expired?.remove(key)
         }
+        if plan.ledger.expired?.isEmpty == true { plan.ledger.expired = nil }
         plan.withdraw.sort()
         return plan
     }
@@ -87,6 +114,16 @@ public enum NotificationPlanner {
         case .agent: s.notifyAgents
         case .unmerged: s.notifyUnmerged
         }
+    }
+
+    static func teamNotice(_ item: NeedsItem, key: String, now: Date) -> Notice {
+        let ago = Durations.ago(now.timeIntervalSince(item.since))
+        let num = item.card?.num ?? ""
+        let name = item.card.flatMap { $0.slug.isEmpty ? nil : $0.slug } ?? item.repoName
+        return Notice(
+            id: key, title: "\(num) closed, not merged",
+            body: "\(item.card?.author ?? "A teammate") closed \(name) \(ago). It isn't in main yet.",
+            open: nil, isReminder: false, passive: true)
     }
 
     static func notice(_ item: NeedsItem, key: String, now: Date, reminder: Bool) -> Notice {
@@ -109,7 +146,7 @@ public enum NotificationPlanner {
             let num = item.card?.num ?? ""
             return Notice(
                 id: key, title: "\(num) isn't merged",
-                body: "\(who) closed \(waited) ago. Merge it today.", open: item.worktree,
+                body: "\(who) closed \(Durations.ago(now.timeIntervalSince(item.since))). Merge it today.", open: item.worktree,
                 isReminder: reminder)
         }
     }

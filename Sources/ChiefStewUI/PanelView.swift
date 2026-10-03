@@ -64,6 +64,7 @@ public struct PanelView: View {
                 if !board.problems.isEmpty { section { problems } }
                 if !board.needsYou.isEmpty { section { needsYou } }
                 if !board.inProgress.isEmpty { section { inProgress } }
+                if !board.team.isEmpty { section { team } }
                 if !board.leftBehind.isEmpty || !board.leftNotes.isEmpty { section { leftBehind } }
             }
             Divider()
@@ -104,7 +105,7 @@ public struct PanelView: View {
 
     private var isEmpty: Bool {
         board.problems.isEmpty && board.needsYou.isEmpty && board.inProgress.isEmpty
-            && board.leftBehind.isEmpty && board.leftNotes.isEmpty
+            && board.team.isEmpty && board.leftBehind.isEmpty && board.leftNotes.isEmpty
     }
 
     // MARK: header / footer
@@ -254,6 +255,17 @@ public struct PanelView: View {
         }
     }
 
+    /// Teammates' builds that are closed but not merged: worth knowing, not yours to act on.
+    private var team: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionTitle(text: "Teammates")
+            ForEach(Array(board.team.enumerated()), id: \.element.id) { i, item in
+                if i > 0 { RowDivider() }
+                TeamRow(item: item, now: now, actions: actions)
+            }
+        }
+    }
+
     private var leftBehind: some View {
         VStack(alignment: .leading, spacing: 6) {
             SectionTitle(
@@ -354,8 +366,15 @@ struct NeedsRow: View {
                     worktreeButton(primary: item.session == nil)
                 }
             case .unmerged:
-                Text("\(item.card?.state ?? "Closed") · not merged yet").indented()
-                Actions { worktreeButton(primary: false) }
+                Text("Closed · not merged yet").indented()
+                if let card = item.card { BranchLine(card: card, now: now) }
+                Actions {
+                    if item.worktree != nil {
+                        worktreeButton(primary: true)
+                    } else if let card = item.card {
+                        BranchButtons(card: card, actions: actions)
+                    }
+                }
             }
         }
     }
@@ -446,6 +465,8 @@ struct BuildRowView: View {
                 if let wt = card.worktree {
                     Button("Open worktree") { actions.openFolder(wt) }
                         .buttonStyle(PillButtonStyle())
+                } else {
+                    BranchButtons(card: card, actions: actions)
                 }
                 if let url = card.url {
                     Button("Open app ↗") { actions.openURL(url) }.buttonStyle(PillButtonStyle())
@@ -468,10 +489,71 @@ struct BuildRowView: View {
         if let lane = card.lane { parts.append("\(lane) lane") }
         if let agent = card.agentLine { parts.append(agent) }
         if let behind = card.behind, behind > 0 { parts.append("\(behind) behind main") }
+        if card.onlyOnOrigin { parts.append(BranchLine.origin(card, now: now)) }
         if card.flags.contains("idle") && card.agentLine == nil {
             parts.append("last commit \(Durations.ago(now.timeIntervalSince(card.lastActivity)))")
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+struct TeamRow: View {
+    var item: NeedsItem
+    var now: Date
+    var actions: PanelActions
+
+    var body: some View {
+        let card = item.card
+        let label = card.map { "\($0.num) \($0.slug)" } ?? item.repoName
+        Row(label: label) {
+            Line1(
+                dot: Palette.dot,
+                name: card.map { Text("\($0.num) ").monospacedDigit() + Text($0.slug) } ?? Text(item.repoName),
+                help: label
+            ) {
+                Text("closed \(Durations.ago(now.timeIntervalSince(item.since)))")
+            }
+            Text("\(card?.author ?? "A teammate") closed it · not merged yet").indented()
+            if let card {
+                BranchLine(card: card, now: now)
+                Actions { BranchButtons(card: card, actions: actions) }
+            }
+        }
+    }
+}
+
+/// The branch, and how fresh the view of it is when it's only on origin.
+struct BranchLine: View {
+    var card: BuildCard
+    var now: Date
+
+    var body: some View {
+        if !card.branch.isEmpty {
+            Text(card.onlyOnOrigin ? "\(card.branch) · \(Self.origin(card, now: now))" : card.branch)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle).help(card.branch)
+                .padding(.leading, 15)
+        }
+    }
+
+    /// Chief Stew never fetches: a branch only on origin is as fresh as the clone's last fetch.
+    static func origin(_ card: BuildCard, now: Date) -> String {
+        card.fetchedAt.map { "on origin, fetched \(Durations.ago(now.timeIntervalSince($0)))" } ?? "on origin"
+    }
+}
+
+/// For a build with no checkout here: its page on GitHub, or its branch name to copy.
+struct BranchButtons: View {
+    var card: BuildCard
+    var actions: PanelActions
+
+    var body: some View {
+        if let url = card.branchURL {
+            Button("Open on GitHub ↗") { actions.openURL(url) }.buttonStyle(PillButtonStyle())
+        }
+        if !card.branch.isEmpty {
+            Button("Copy branch name") { actions.copy(card.branch) }.buttonStyle(PillButtonStyle())
+        }
     }
 }
 

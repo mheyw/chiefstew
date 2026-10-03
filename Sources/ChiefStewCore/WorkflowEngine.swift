@@ -69,6 +69,67 @@ struct GitReader: Sendable {
         run(["merge-base", "--is-ancestor", ref, main]) != nil
     }
 
+    /// origin's default branch as a remote ref (`origin/main`), if this clone knows it. Fresher
+    /// than the local main, which nobody pulls while working on a build branch.
+    func originDefault() -> String? {
+        guard
+            let head = run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])?
+                .trimmingCharacters(in: .whitespacesAndNewlines), head.hasPrefix("origin/"), tip(head) != nil
+        else { return nil }
+        return head
+    }
+
+    /// `ref` changes files of its own, yet merging it into `target` would change nothing: its
+    /// work is already there, squashed or rebased in. A branch of empty commits (just started)
+    /// changes nothing either, so it doesn't count; nor does a conflict.
+    func changesNothing(_ ref: String, into target: String) -> Bool {
+        guard run(["diff", "--quiet", "\(target)...\(ref)"]) == nil,  // exits 1: it has changes
+            let merged = run(["merge-tree", "--write-tree", target, ref])?.split(separator: "\n").first,
+            let tree = run(["rev-parse", "\(target)^{tree}"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return false }
+        return String(merged) == tree
+    }
+
+    /// Who wrote the build's own commits (those not on `base`): the newest author's name, and
+    /// every author's email, lowercased.
+    func authors(_ ref: String, since base: String) -> (latest: String?, emails: Set<String>) {
+        let rows = lines(["log", "--no-merges", "-n", "500", "--format=%ae%x00%an", "\(base)..\(ref)"])
+            .map { $0.components(separatedBy: "\u{0}") }
+        return (rows.first.flatMap { $0.count > 1 ? $0[1] : nil }, Set(rows.map { $0[0].lowercased() }))
+    }
+
+    func userEmail() -> String? {
+        run(["config", "user.email"]).map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The real host behind an ssh alias (`Host work` → `github.com`), from the ssh config.
+    /// `ssh -G` only reads config; it doesn't connect.
+    static func sshHost(_ alias: String) -> String {
+        guard !alias.hasPrefix("-"),
+            let r = try? CommandRunner.runBlocking(
+                "/usr/bin/ssh", ["-G", alias], cwd: nil, environment: ["HOME": NSHomeDirectory()], timeout: 5),
+            r.exitCode == 0
+        else { return alias }
+        let line = String(decoding: r.stdout, as: UTF8.self).split(separator: "\n")
+            .first { $0.lowercased().hasPrefix("hostname ") }
+        return line.map { String($0.dropFirst(9)).trimmingCharacters(in: .whitespaces) } ?? alias
+    }
+
+    func originURL() -> String? {
+        run(["remote", "get-url", "origin"]).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    /// When this clone last fetched (FETCH_HEAD's date). Chief Stew never fetches, so this is how
+    /// fresh anything known only from origin is.
+    func fetchedAt() -> Date? {
+        guard let dir = run(["rev-parse", "--git-common-dir"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        let base = dir.hasPrefix("/") ? dir : (repo as NSString).appendingPathComponent(dir)
+        let head = (base as NSString).appendingPathComponent("FETCH_HEAD")
+        return (try? FileManager.default.attributesOfItem(atPath: head))?[.modificationDate] as? Date
+    }
+
     func lastCommit(_ ref: String) -> (date: Date, subject: String)? {
         guard let out = run(["log", "-1", "--format=%ct%x00%s", ref]) else { return nil }
         let parts = out.trimmingCharacters(in: .newlines).components(separatedBy: "\u{0}")
@@ -138,16 +199,20 @@ public struct WorkflowEngine: Sendable {
     /// Also says what was considered and skipped, and why (for `chiefstew check`).
     public func runExplained(now: Date = Date()) -> (report: StatusReport, diagnostics: [BuildDiagnostics], skipped: [String]) {
         let main = git.mainBranch()
+        let upstream = git.originDefault()
         let worktrees = git.worktrees()
+        let who = Who(me: git.userEmail(), origin: git.originURL())
         var skipped: [String] = []
         var rows: [BuildRow] = []
         var diagnostics: [BuildDiagnostics] = []
-        for c in candidates(main: main, worktrees: worktrees, skipped: &skipped) {
-            let (row, notes) = build(c, main: main, now: now)
+        for c in candidates(main: main, upstream: upstream, worktrees: worktrees, skipped: &skipped) {
+            let (row, notes) = build(c, main: main, upstream: upstream, who: who, now: now)
             rows.append(row)
             diagnostics.append(BuildDiagnostics(num: c.num, slug: c.slug, source: source(c), notes: notes))
         }
-        return (StatusReport(repo: repo, builds: rows), diagnostics, skipped)
+        var report = StatusReport(repo: repo, builds: rows)
+        if rows.contains(where: { $0.onlyOnOrigin == true }) { report.fetchedAt = git.fetchedAt() }
+        return (report, diagnostics, skipped)
     }
 
     private func source(_ c: Candidate) -> String {
@@ -157,12 +222,23 @@ public struct WorkflowEngine: Sendable {
 
     // MARK: finding builds
 
-    func candidates(main: String, worktrees: [GitReader.Worktree]) -> [Candidate] {
+    func candidates(main: String, upstream: String? = nil, worktrees: [GitReader.Worktree]) -> [Candidate] {
         var ignored: [String] = []
-        return candidates(main: main, worktrees: worktrees, skipped: &ignored)
+        return candidates(main: main, upstream: upstream, worktrees: worktrees, skipped: &ignored)
     }
 
-    func candidates(main: String, worktrees: [GitReader.Worktree], skipped: inout [String]) -> [Candidate] {
+    /// Where `ref`'s work already is, if it's merged: contained in the local main or origin's
+    /// default, or merging it into the fresher of the two would change nothing (a squash merge).
+    func mergedInto(_ ref: String, main: String, upstream: String?) -> String? {
+        if git.isMerged(ref, into: main) { return main }
+        if let upstream, git.isMerged(ref, into: upstream) { return upstream }
+        let target = upstream ?? main
+        return git.changesNothing(ref, into: target) ? target : nil
+    }
+
+    func candidates(
+        main: String, upstream: String? = nil, worktrees: [GitReader.Worktree], skipped: inout [String]
+    ) -> [Candidate] {
         let byBranch = Dictionary(
             worktrees.compactMap { w in w.branch.map { ($0, w.path) } }, uniquingKeysWith: { a, _ in a })
         switch spec.builds {
@@ -192,8 +268,8 @@ public struct WorkflowEngine: Sendable {
                     skipped.append("\(branch): doesn't match \(pattern)")
                     continue
                 }
-                if byBranch[branch] == nil && git.isMerged(branch, into: main) {
-                    skipped.append("\(branch): already merged into \(main)")
+                if byBranch[branch] == nil, let into = mergedInto(branch, main: main, upstream: upstream) {
+                    skipped.append("\(branch): already merged into \(into)")
                     continue
                 }
                 out.append(
@@ -207,8 +283,8 @@ public struct WorkflowEngine: Sendable {
                 let local = Set(git.branches())
                 for branch in git.remoteBranches() where !local.contains(branch) && branch != main {
                     guard let g = Self.groups(re, branch) else { continue }
-                    if git.isMerged("origin/\(branch)", into: main) {
-                        skipped.append("origin/\(branch): already merged into \(main)")
+                    if let into = mergedInto("origin/\(branch)", main: main, upstream: upstream) {
+                        skipped.append("origin/\(branch): already merged into \(into)")
                         continue
                     }
                     if spec.includeRemote == nil, let last = git.lastCommit("origin/\(branch)")?.date {
@@ -257,7 +333,15 @@ public struct WorkflowEngine: Sendable {
 
     // MARK: one build
 
-    func build(_ c: Candidate, main: String, now: Date) -> (BuildRow, [BuildDiagnostics.Note]) {
+    /// Per run: this clone's git identity and origin URL.
+    struct Who {
+        var me: String?
+        var origin: String?
+    }
+
+    func build(
+        _ c: Candidate, main: String, upstream: String? = nil, who: Who = Who(), now: Date
+    ) -> (BuildRow, [BuildDiagnostics.Note]) {
         var notes: [BuildDiagnostics.Note] = []
         func note(_ field: String, _ ok: Bool, _ detail: String) {
             notes.append(.init(field: field, ok: ok, detail: detail))
@@ -283,8 +367,16 @@ public struct WorkflowEngine: Sendable {
         let last = git.lastCommit(c.ref)
         var row = BuildRow(
             num: c.num, slug: c.slug, branch: c.branch, state: "", lastCommitAt: last?.date ?? now,
-            merged: false, worktree: c.worktree, behind: git.behind(c.ref, main))
+            merged: false, worktree: c.worktree, behind: git.behind(c.ref, upstream ?? main))
         row.worktrees = c.extraWorktrees
+        if c.ref != main {
+            let authors = git.authors(c.ref, since: upstream ?? main)
+            row.author = authors.latest
+            // Yours if you wrote any of its commits; unknown without a git identity.
+            if let me = who.me, !authors.emails.isEmpty { row.mine = authors.emails.contains(me) }
+        }
+        if c.ref.hasPrefix("origin/") { row.onlyOnOrigin = true }
+        row.branchURL = who.origin.flatMap { Self.branchURL(origin: $0, branch: c.branch, resolve: GitReader.sshHost) }
         if !c.extraWorktrees.isEmpty {
             note("checkouts", true, "also worked on in " + c.extraWorktrees.map { PathMatch.relative($0, to: repo) }.joined(separator: ", "))
         }
@@ -449,6 +541,29 @@ public struct WorkflowEngine: Sendable {
     }
 
     // MARK: pure helpers (tested directly)
+
+    /// The branch's page on GitHub, from origin's URL (https, ssh, or scp-style `git@host:o/r`).
+    /// `resolve` maps an ssh host alias to its real host. Nil for other hosts.
+    static func branchURL(origin: String, branch: String, resolve: (String) -> String = { $0 }) -> String? {
+        var host: String
+        var path: String
+        if let url = URL(string: origin), let h = url.host, ["https", "http", "ssh"].contains(url.scheme ?? "") {
+            host = h
+            path = url.path
+        } else if let at = origin.firstIndex(of: "@"), let colon = origin[at...].firstIndex(of: ":") {
+            host = String(origin[origin.index(after: at)..<colon])
+            path = String(origin[origin.index(after: colon)...])
+        } else {
+            return nil
+        }
+        if host != "github.com" { host = resolve(host) }
+        path = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if path.hasSuffix(".git") { path = String(path.dropLast(4)) }
+        guard host == "github.com", path.split(separator: "/").count == 2,
+            let b = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return nil }
+        return "https://github.com/\(path)/tree/\(b)"
+    }
 
     /// `build/{num}-{slug}` → a regex with named groups.
     static func templateRegex(_ template: String) -> NSRegularExpression? {

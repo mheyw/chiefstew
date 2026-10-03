@@ -79,7 +79,7 @@ chiefstew status   # the exact JSON Chief Stew will show (contract § 4)
 
 `builds.folder` (with `worktrees` or `branches`) is where a build's files live, relative to its checkout. It takes `{num}`, `{slug}` and `{branch}`, and its last part may use `*`, e.g. `docs/builds/{num}_*`. Without it, files are read from the checkout's root.
 
-A branch that's merged into the main branch (origin's default, else `main`, else `master`) leaves the list, unless it's still checked out in a worktree. A brand-new branch looks merged to git, so worktrees always count.
+A branch that's merged leaves the list, unless it's still checked out in a worktree. Merged means its commits are in the local main branch (`main`, else `master`) or in origin's default branch as last fetched, or that merging it into origin's would change nothing because its changes went in as a squash or rebase. A brand-new branch looks merged to git, so worktrees always count. A build whose commits are all by someone else (not this clone's `user.email`) is a teammate's: if it's closed but not merged, it's shown for information, not as needing you.
 
 With `branches`, builds that only exist as `origin/…` (pushed from another machine, or by a teammate) count too, if they've had a commit in the last 30 days. `"remote": true` counts all of them, and `"remote": false` none. Chief Stew never fetches, so these are as fresh as your last `git fetch`.
 

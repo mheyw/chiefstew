@@ -72,6 +72,15 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// Set aside on purpose: the Current state line starts with "Parked". Shown dimmed and last,
     /// and never in the menu-bar title.
     public var parked: Bool = false
+    public var branch: String = ""
+    /// The branch's web page (GitHub), when known.
+    public var branchURL: String?
+    /// Who wrote the build's newest commit of its own.
+    public var author: String?
+    /// The branch exists only on origin: what's shown is as of `fetchedAt`.
+    public var onlyOnOrigin: Bool = false
+    /// When the clone last fetched from origin.
+    public var fetchedAt: Date?
     /// Claude Code says a session in this build's checkout is busy. On a parked build it means
     /// the build was picked up again before its Current state line said so.
     public var agentWorking: Bool = false
@@ -148,6 +157,8 @@ public struct MenuBarState: Sendable, Equatable {
 
 public struct Board: Sendable, Equatable {
     public var needsYou: [NeedsItem] = []
+    /// A teammate's build that's closed but not merged: worth knowing, not yours to act on.
+    public var team: [NeedsItem] = []
     public var inProgress: [BuildCard] = []
     public var leftBehind: [LeftItem] = []
     public var leftNotes: [String] = []
@@ -275,10 +286,11 @@ extension Board {
                     needBuilds.insert(id)
                 }
                 if row.flags.contains("closed-unmerged") {
-                    board.needsYou.append(
-                        NeedsItem(
-                            id: "\(id)#unmerged", kind: .unmerged, since: row.lastCommitAt,
-                            card: card, repoName: repo.name, worktree: row.worktree))
+                    let item = NeedsItem(
+                        id: "\(id)#unmerged", kind: .unmerged, since: row.lastCommitAt,
+                        card: card, repoName: repo.name, worktree: row.worktree)
+                    // Only a build you wrote needs you to merge it; unknown authorship counts as yours.
+                    if row.mine == false { board.team.append(item) } else { board.needsYou.append(item) }
                     needBuilds.insert(id)
                 }
             }
@@ -322,6 +334,7 @@ extension Board {
         }
 
         board.needsYou.sort { ($0.since, $0.id) < ($1.since, $1.id) }
+        board.team.sort { ($0.since, $0.id) < ($1.since, $1.id) }
         board.inProgress.sort {
             if $0.parked != $1.parked { return !$0.parked }
             return ($0.lastActivity, $1.id) > ($1.lastActivity, $0.id)
@@ -404,7 +417,8 @@ extension Board {
             progress: row.progress, url: row.urls["admin"] ?? row.urls.values.sorted().first,
             staleSince: repo.statusError?.since,
             parked: row.isParked,
-            agentWorking: busy > 0)
+            branch: row.branch, branchURL: row.branchURL, author: row.author,
+            onlyOnOrigin: row.onlyOnOrigin == true, fetchedAt: repo.status?.fetchedAt, agentWorking: busy > 0)
     }
 
     static func leftItems(repo: RepoSnapshot, sweep: SweepReport) -> [LeftItem] {
