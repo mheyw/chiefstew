@@ -8,6 +8,8 @@ public struct RepoSnapshot: Sendable, Equatable {
     public var statusError: RepoError?
     public var sweep: SweepReport?
     public var sweepAt: Date?
+    /// The last sweep failed; any earlier sweep is still shown.
+    public var sweepError: RepoError?
     /// The repo has no status command: only its agents are watched.
     public var agentsOnly = false
 
@@ -137,6 +139,10 @@ public struct MenuBarState: Sendable, Equatable {
     public var warning: Bool
     /// Work is in flight: a small dot on the icon.
     public var busy: Bool = false
+    /// A registered repo's status is failing (part of `warning`).
+    public var unreadable: Bool = false
+    /// A registered repo hasn't been read yet.
+    public var loading: Bool = false
 }
 
 public struct Board: Sendable, Equatable {
@@ -149,6 +155,8 @@ public struct Board: Sendable, Equatable {
     public var sweptAt: Date?
     public var problems: [Problem] = []
     public var repoNames: [String] = []
+    /// Registered repos whose status hasn't been read yet (first poll still running).
+    public var loading: [String] = []
     public var checkedAt: Date?
 
     public var buildCount: Int {
@@ -170,26 +178,36 @@ public struct Board: Sendable, Equatable {
         if !problems.isEmpty {
             parts.append(problems.count == 1 ? "1 repo stale" : "\(problems.count) repos stale")
         }
-        return parts.isEmpty ? "Nothing in flight" : parts.joined(separator: " · ")
+        if parts.isEmpty { return loading.isEmpty ? "Nothing in flight" : "Checking…" }
+        return parts.joined(separator: " · ")
     }
 
     public var menu: MenuBarState {
-        let warning = !leftBehind.isEmpty || !problems.isEmpty
+        let unreadable = !problems.isEmpty
+        let warning = !leftBehind.isEmpty || unreadable
+        let loading = !loading.isEmpty
         if needsYou.count == 1 {
-            return .init(title: needsYou[0].menuTitle, attention: true, warning: warning, busy: true)
+            return .init(
+                title: needsYou[0].menuTitle, attention: true, warning: warning, busy: true,
+                unreadable: unreadable, loading: loading)
         }
         if needsYou.count > 1 {
-            return .init(title: "\(needsYou.count) need you", attention: true, warning: warning, busy: true)
+            return .init(
+                title: "\(needsYou.count) need you", attention: true, warning: warning, busy: true,
+                unreadable: unreadable, loading: loading)
         }
         let active = active
         guard let top = active.first else {
-            return .init(title: nil, attention: false, warning: warning)
+            return .init(
+                title: nil, attention: false, warning: warning, unreadable: unreadable, loading: loading)
         }
         var title = top.num
         if let label = top.phaseLabel { title += " \(label)" }
         if let t = top.tasks, t.total > 0 { title += " \(t.done)/\(t.total)" }
         if active.count > 1 { title += " +\(active.count - 1)" }
-        return .init(title: title, attention: false, warning: warning, busy: true)
+        return .init(
+            title: title, attention: false, warning: warning, busy: true, unreadable: unreadable,
+            loading: loading)
     }
 }
 
@@ -205,6 +223,7 @@ extension Board {
         var board = Board()
         board.repoNames = repos.map(\.name)
         board.checkedAt = repos.compactMap(\.statusAt).min()
+        board.loading = repos.filter { $0.status == nil && $0.statusError == nil }.map(\.name)
 
         // One entry per build. A status may report a worktree on another branch (e.g. an agent
         // worktree branched from the build) as a second row with the same number; keep the
@@ -315,6 +334,9 @@ extension Board {
                 board.leftNotes += sweep.errors
                 if !items.isEmpty { board.leftCleanup += sweep.cleanup }
                 board.sweptAt = [board.sweptAt, repo.sweepAt].compactMap { $0 }.min()
+            }
+            if let e = repo.sweepError {
+                board.leftNotes.append("\(repo.name) sweep failed · \(e.message)")
             }
         }
         return board

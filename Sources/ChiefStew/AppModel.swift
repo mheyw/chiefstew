@@ -650,12 +650,16 @@ final class AppModel {
         defer { sweeping.remove(repo) }
         switch await client.sweep(repo: repo) {
         case .success(let report):
+            snapshots[repo]?.sweepError = nil
             guard let report else { return }  // no sweep command
             snapshots[repo]?.sweep = report
             snapshots[repo]?.sweepAt = Date()
             dumpDebugState()
         case .failure(let error):
             log.error("\(repo, privacy: .public) sweep: \(error.description, privacy: .public)")
+            if snapshots[repo]?.sweepError?.message != error.description {
+                snapshots[repo]?.sweepError = RepoError(message: error.description, since: Date(), hint: error.hint)
+            }
         }
     }
 

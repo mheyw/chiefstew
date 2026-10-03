@@ -163,6 +163,11 @@ public struct PanelView: View {
                 Button("Add a repo…") { actions.openRepos() }
                     .buttonStyle(PillButtonStyle(primary: true))
                     .padding(.top, 6)
+            } else if !board.loading.isEmpty {
+                ProgressView().controlSize(.small).padding(.bottom, 4)
+                Text("Checking ").foregroundStyle(.secondary)
+                    + Text(board.loading.joined(separator: ", ")).bold()
+                    + Text("…").foregroundStyle(.secondary)
             } else {
                 Text("All quiet.").font(.system(size: 14))
                 Text("No builds in flight in ")

@@ -22,8 +22,12 @@ public struct MenuBarLabel: View {
 
     private var accessibilityText: String {
         var text = "Chief Stew"
-        if let title = state.title { text += ", \(title)" } else if !state.busy { text += ", nothing in flight" }
-        if state.warning { text += ", something left behind" }
+        if let title = state.title {
+            text += ", \(title)"
+        } else if !state.busy {
+            text += state.loading ? ", checking" : ", nothing in flight"
+        }
+        if state.unreadable { text += ", a repo can't be read" } else if state.warning { text += ", something left behind" }
         return text
     }
 }

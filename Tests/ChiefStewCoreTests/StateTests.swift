@@ -244,7 +244,33 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     #expect(b.inProgress.allSatisfy { $0.staleSince == now })
     #expect(b.header.hasSuffix("1 repo stale"))
     #expect(b.menu.warning)
+    #expect(b.menu.unreadable)
     #expect(b.inProgress.allSatisfy { $0.tag == "stale" })
+}
+
+@Test func reposNotReadYetAreLoadingNotQuiet() {
+    let b = Board.make(repos: [RepoSnapshot(path: "/r")], agents: [], now: now)
+    #expect(b.loading == ["r"])
+    #expect(b.header == "Checking…")
+    #expect(b.menu.loading)
+    // A failed first read is a problem, not loading.
+    let failed = Board.make(
+        repos: [RepoSnapshot(path: "/r", statusError: RepoError(message: "exit 1", since: now))], agents: [], now: now)
+    #expect(failed.loading.isEmpty)
+}
+
+@Test func aFailedSweepIsShownUnderLeftBehind() {
+    var repo = RepoSnapshot(path: "/r", status: StatusReport(builds: []), statusAt: now)
+    repo.sweepError = RepoError(message: "sweep timed out after 20 s", since: now)
+    let b = Board.make(repos: [repo], agents: [], now: now)
+    #expect(b.leftNotes == ["r sweep failed · sweep timed out after 20 s"])
+    #expect(!b.menu.unreadable)
+}
+
+@Test func leftBehindAloneIsAWarningButNotUnreadable() throws {
+    let b = try fullBoard(sweep: SweepReport(processes: [.init(pid: 1, cwd: "/gone")]))
+    #expect(b.menu.warning)
+    #expect(!b.menu.unreadable)
 }
 
 // MARK: - Portable contract bits
