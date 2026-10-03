@@ -750,18 +750,34 @@ final class AppModel {
     /// by `chiefstew hook`. Falls back to opening the session's folder.
     func goToSession(_ session: String) {
         guard let s = tracker.sessions[session] else { return }
+        var host: NSRunningApplication?
         if let pid = s.hostPid, let app = NSRunningApplication(processIdentifier: pid_t(pid)),
             s.hostApp == nil || app.bundleIdentifier == s.hostApp
         {
-            app.activate()
+            host = app
+        } else if let bundle = s.hostApp {
+            host = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first
+        }
+        guard let host else {
+            WorktreeApps.open(s.path, with: settings.worktreeApp)
             return
         }
-        if let bundle = s.hostApp, let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
-            app.activate()
+        // Activating an editor with several windows brings forward the last one used, which may
+        // be another project. These editors focus the window that already has a folder open when
+        // asked to open it, so open the session's folder instead.
+        if let bundle = host.bundleIdentifier, Self.folderWindowEditors.contains(bundle) {
+            WorktreeApps.open(s.path, with: bundle)
             return
         }
-        WorktreeApps.open(s.path, with: settings.worktreeApp)
+        host.activate()
     }
+
+    /// Editors with one window per folder that focus the existing window when that folder is opened.
+    private static let folderWindowEditors: Set<String> = [
+        "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium",
+        "com.todesktop.230313mzl4w4u92",  // Cursor
+        "com.exafunction.windsurf",
+    ]
 
     /// A file that's only in git (`ref:path`, the build isn't checked out): read it with
     /// `git show` (read-only), save a read-only copy in the cache folder, and open that.
