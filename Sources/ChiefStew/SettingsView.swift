@@ -55,6 +55,10 @@ private struct ReposPane: View {
                                 Text(error.message).font(.caption).foregroundStyle(.red)
                                     .lineLimit(2)
                             }
+                            if model.events.doubledRepos(now: model.tick)[PathMatch.normalize(repo)] != nil {
+                                Text(EventState.doubledHint).font(.caption).foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer()
                         Button("Set up…") {

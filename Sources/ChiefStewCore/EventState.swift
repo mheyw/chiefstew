@@ -50,6 +50,19 @@ public struct EventState: Sendable, Equatable {
     public private(set) var gates = EventGates()
     private var seen = Set<String>()
     private var seenOrder: [String] = []
+    /// Repos that send agent events of their own alongside Chief Stew's hooks → when last seen.
+    public private(set) var doubled: [String: Date] = [:]
+    private var lastAgent: [String: LastAgent] = [:]
+
+    private struct LastAgent: Sendable, Equatable {
+        var kind: String
+        var ts: Date
+        var fromHook: Bool
+    }
+
+    /// Shown in Settings and by `chiefstew check` for a doubled repo.
+    public static let doubledHint =
+        "⚠ This repo sends its own agent events (needs input, stopped, …) as well as Chief Stew's Claude Code hooks. Remove the repo's own: Chief Stew's hooks already cover every repo."
 
     public init(agents: AgentTracker = AgentTracker()) {
         self.agents = agents
@@ -66,13 +79,33 @@ public struct EventState: Sendable, Equatable {
                 seen.remove(seenOrder.removeFirst())
             }
         }
+        noteProducer(e)
         agents.apply(e)
         gates.apply(e)
         return true
     }
 
+    /// The same agent event from Chief Stew's hook and from somewhere else, moments apart,
+    /// means the repo re-sends what the hooks already send (one producer per fact).
+    private mutating func noteProducer(_ e: Event) {
+        guard e.isAgentEvent, let session = e.session else { return }
+        let fromHook = e.producer == "chiefstew-hook"
+        if let prev = lastAgent[session], prev.kind == e.kind, prev.fromHook != fromHook,
+            abs(e.ts.timeIntervalSince(prev.ts)) < 3
+        {
+            doubled[PathMatch.normalize(e.repo)] = e.ts
+        }
+        lastAgent[session] = LastAgent(kind: e.kind, ts: e.ts, fromHook: fromHook)
+    }
+
+    /// Doubled repos seen in the last day.
+    public func doubledRepos(now: Date) -> [String: Date] {
+        doubled.filter { now.timeIntervalSince($0.value) < 24 * 3600 }
+    }
+
     public mutating func prune(now: Date) {
         agents.prune(now: now)
+        lastAgent = lastAgent.filter { now.timeIntervalSince($0.value.ts) < 24 * 3600 }
     }
 }
 

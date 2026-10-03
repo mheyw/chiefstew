@@ -78,6 +78,7 @@ Flags: `--build`, `--gate`, `--phase`, `--slug`, `--lane`, `--message`, `--sessi
 |---|---|---|---|
 | `v` | int | yes | `1`. Any other value is skipped and logged. |
 | `id` | string | no (recommended) | Unique per event, e.g. a UUID; at most 64 characters. A copy with an `id` already handled is ignored. `chiefstew emit` and `chiefstew hook` set one. |
+| `producer` | string | no | Who sent it: `chiefstew-hook`, `chiefstew-emit`, or the sender's own name. Chief Stew uses it to spot a repo re-sending the agent events its hooks already send, and says so in Settings and `chiefstew check`. |
 | `ts` | string | yes | ISO 8601 with a zone. If it can't be parsed, the file's mtime is used instead. |
 | `kind` | string | yes | See §3.2. Unknown kinds are ignored, so the contract can grow. |
 | `repo` | string | yes | Absolute path of the repo's **main** working tree (the parent of `git rev-parse --path-format=absolute --git-common-dir`). Must match a repo registered in Chief Stew. |

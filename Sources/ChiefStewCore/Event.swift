@@ -4,6 +4,9 @@ import Foundation
 public struct Event: Sendable, Equatable {
     /// Unique per event, set by the emitter. Copies with the same ID are handled once.
     public var id: String?
+    /// Who sent it: `chiefstew-hook` (Chief Stew's Claude Code hooks), `chiefstew-emit`, or the
+    /// sender's own name. Used to spot a repo re-sending what Chief Stew's hooks already send.
+    public var producer: String?
     public var ts: Date
     public var kind: String
     public var repo: String
@@ -87,7 +90,7 @@ public struct Event: Sendable, Equatable {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var d: [String: Any] = ["v": 1, "ts": f.string(from: ts), "kind": kind, "repo": repo]
         let optional: [String: Any?] = [
-            "id": id, "worktree": worktree, "build": build, "slug": slug, "lane": lane, "phase": phase,
+            "id": id, "producer": producer, "worktree": worktree, "build": build, "slug": slug, "lane": lane, "phase": phase,
             "gate": gate, "session": session, "agent": agent, "notification_type": notificationType,
             "message": message, "host_app": hostApp, "host_pid": hostPid, "tty": tty,
         ]
@@ -123,6 +126,7 @@ public struct Event: Sendable, Equatable {
             session: string("session"), agent: string("agent"),
             notificationType: string("notification_type"), message: message)
         event.id = string("id").map { String($0.prefix(maxID)) }
+        event.producer = string("producer").map { String($0.prefix(maxID)) }
         event.hostApp = string("host_app")
         event.hostPid = json["host_pid"] as? Int
         event.tty = string("tty")

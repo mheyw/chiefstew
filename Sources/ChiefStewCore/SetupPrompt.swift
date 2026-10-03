@@ -57,6 +57,11 @@ public enum SetupPrompt {
             - `artefact` is the file a reviewer opens at a gate. `approve` is the exact command that signs a gate off, if the repo has one. Chief Stew copies it and never runs it.
             - `parked` (set aside) and `closed` (finished, waiting to merge) are regular expressions on the state line.
 
+            What not to add (Chief Stew already covers it, and a second source makes it double up):
+            - **No Claude Code hooks and no `agent.*` events.** Chief Stew's own hooks, installed once for every repo, already say when an agent needs the owner, ends a turn or gets an answer.
+            - **No desktop notifications** from the repo's scripts while Chief Stew is running (the contract's `alive` file says when). Chief Stew decides what to notify.
+            - **Optional:** if the repo has scripts that open or sign off a gate, they may also send `\(cs) emit gate.waiting` / `gate.approved` (contract § 2.1) so the change shows at once instead of at the next status read. Only facts the repo alone knows; never required.
+
             ---
 
             # The workflow format

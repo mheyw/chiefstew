@@ -92,3 +92,53 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: journal.previous.path))
     #expect(journal.replay(now: iso("2026-09-30T15:00:00Z")).count == 2)  // both files are read
 }
+
+// MARK: - One producer per fact
+
+private func agentEvent(_ kind: String, _ at: String, producer: String?, repo: String = "/Users/you/my-app") -> Event {
+    var e = Event(ts: iso(at), kind: kind, repo: repo, session: "s1", agent: "claude-code")
+    e.id = UUID().uuidString
+    e.producer = producer
+    return e
+}
+
+@Test func aRepoResendingAgentEventsIsSpotted() {
+    var state = EventState()
+    state.apply(agentEvent("agent.needs_input", "2026-10-03T12:00:00.000Z", producer: "chiefstew-hook"))
+    state.apply(agentEvent("agent.needs_input", "2026-10-03T12:00:00.400Z", producer: nil, repo: "/Users/you/my-app/"))
+    #expect(state.doubledRepos(now: iso("2026-10-03T12:01:00Z")).keys.sorted() == ["/Users/you/my-app"])
+    #expect(state.doubledRepos(now: iso("2026-10-04T13:00:00Z")).isEmpty)  // a day later it's old news
+    // The copy still counts once.
+    #expect(state.agents.current(now: iso("2026-10-03T12:01:00Z")).count == 1)
+}
+
+@Test func onlyChiefStewsHooksIsNotDoubling() {
+    var state = EventState()
+    state.apply(agentEvent("agent.needs_input", "2026-10-03T12:00:00Z", producer: "chiefstew-hook"))
+    state.apply(agentEvent("agent.active", "2026-10-03T12:00:01Z", producer: "chiefstew-hook"))
+    state.apply(agentEvent("agent.stopped", "2026-10-03T12:00:02Z", producer: "chiefstew-hook"))
+    state.apply(agentEvent("agent.stopped", "2026-10-03T12:00:30Z", producer: nil))  // not moments apart
+    state.apply(agentEvent("agent.resumed", "2026-10-03T12:00:31Z", producer: "chiefstew-hook"))  // another kind
+    #expect(state.doubled.isEmpty)
+}
+
+@Test func doublingIsRebuiltFromTheJournal() throws {
+    let home = try tempDir()
+    let journal = EventJournal(paths: Paths(environment: ["CHIEFSTEW_HOME": home.path]))
+    journal.append([
+        agentEvent("agent.stopped", "2026-10-03T12:00:00.000Z", producer: nil),
+        agentEvent("agent.stopped", "2026-10-03T12:00:00.300Z", producer: "chiefstew-hook"),
+    ])
+    var state = EventState()
+    for e in journal.replay(now: iso("2026-10-03T13:00:00Z")) { state.apply(e) }
+    #expect(state.doubledRepos(now: iso("2026-10-03T13:00:00Z"))["/Users/you/my-app"] != nil)
+}
+
+@Test func theSetupPromptSaysWhatNotToAdd() {
+    let prompt = SetupPrompt.make(
+        repo: "/Users/you/my-app", config: RepoConfig(status: nil, sweep: nil, source: .none), problem: nil, contract: nil,
+        workflowDoc: nil, cli: "/Apps/chiefstew")
+    #expect(prompt.contains("No Claude Code hooks and no `agent.*` events"))
+    #expect(prompt.contains("No desktop notifications"))
+    #expect(prompt.contains("/Apps/chiefstew emit gate.waiting"))
+}

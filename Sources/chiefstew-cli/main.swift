@@ -89,7 +89,7 @@ func hook(_ sub: String?) -> Never {
     let checkout = Emitter.checkout(of: cwd)
     var event: [String: Any] = [
         "kind": kind, "repo": checkout?.repo ?? PathMatch.normalize(cwd), "session": session,
-        "agent": "claude-code",
+        "agent": "claude-code", "producer": "chiefstew-hook",
     ]
     if let c = checkout, c.worktree != c.repo { event["worktree"] = c.worktree }
     // Which app is running the session (Terminal, iTerm, VS Code…), so "Go to session" can
@@ -152,7 +152,7 @@ enum HostApp {
 
 func emit(_ rest: [String]) -> Never {
     guard let kind = rest.first, !kind.hasPrefix("--") else { usage() }
-    var event: [String: Any] = ["kind": kind]
+    var event: [String: Any] = ["kind": kind, "producer": "chiefstew-emit"]
     var repoFolder = FileManager.default.currentDirectoryPath
     var i = 1
     while i < rest.count {
@@ -254,8 +254,15 @@ func workflowArg(_ rest: [String]) -> String? {
 }
 
 func check(_ rest: [String]) -> Never {
-    let r = WorkflowCheck.run(repo: repoArg(rest), file: workflowArg(rest))
+    let repo = repoArg(rest)
+    let r = WorkflowCheck.run(repo: repo, file: workflowArg(rest))
     print(r.text)
+    // From Chief Stew's journal: does this repo also send agent events of its own?
+    var state = EventState()
+    for e in EventJournal(paths: paths).replay() { state.apply(e) }
+    if let seen = state.doubledRepos(now: Date())[PathMatch.normalize(repo)] {
+        print("\n" + EventState.doubledHint + " (last seen \(Durations.ago(Date().timeIntervalSince(seen))))")
+    }
     exit(r.ok ? 0 : 1)
 }
 
