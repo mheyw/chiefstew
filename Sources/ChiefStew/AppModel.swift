@@ -24,6 +24,8 @@ final class AppModel {
     private(set) var tick = Date()
     private(set) var permission: Notifier.Permission = .unknown
     private(set) var login: LoginEnvironment?
+    /// What Claude Code says its sessions are doing; nil when `claude` can't be found or read.
+    private(set) var claude: ClaudeSessions?
     private(set) var loginError: String?
     var settingsTab: SettingsTab = .repos
     private(set) var update: UpdateBanner?
@@ -122,7 +124,8 @@ final class AppModel {
     func board(now: Date) -> Board {
         Board.make(
             repos: repos.map { snapshots[$0] ?? RepoSnapshot(path: $0) },
-            agents: tracker.current(now: now), eventGates: events.gates.current(now: now), now: now)
+            agents: tracker.current(now: now), eventGates: events.gates.current(now: now), claude: claude,
+            now: now)
     }
 
     // MARK: lifecycle
@@ -212,7 +215,7 @@ final class AppModel {
             return now.timeIntervalSince(at) > Self.panelFreshness
         }
         tick = now
-        if stale { Task { await refreshAll() } }
+        if stale { Task { await refreshAll() } } else { Task { await refreshClaude() } }
         Task { await checkForUpdate(.panel) }
     }
 
@@ -600,7 +603,31 @@ final class AppModel {
     func refreshAll() async {
         await withTaskGroup(of: Void.self) { group in
             for repo in repos { group.addTask { await self.refresh(repo) } }
+            group.addTask { await self.refreshClaude() }
         }
+    }
+
+    /// Asks Claude Code which sessions are busy, idle or waiting (`claude agents --json`, local
+    /// and read-only). On any failure the panel says nothing about agents working, rather than
+    /// guess from hooks.
+    func refreshClaude() async {
+        guard case .success = await client(), let login,
+            let exe = ClaudeSessions.locate(path: login.path)
+        else {
+            claude = nil
+            return
+        }
+        let r = try? await CommandRunner.run(
+            exe, ["agents", "--json"],
+            environment: ["PATH": "\(login.path):/usr/bin:/bin", "HOME": NSHomeDirectory()], timeout: 10)
+        guard let r, r.exitCode == 0, !r.timedOut, let report = ClaudeSessions.parse(r.stdout) else {
+            log.error("claude agents --json: \(r.map { $0.stderrText } ?? "didn't run", privacy: .public)")
+            claude = nil
+            return
+        }
+        var sessions = claude ?? ClaudeSessions()
+        sessions.update(report, at: Date())
+        claude = sessions
     }
 
     func refresh(_ repo: String) async {

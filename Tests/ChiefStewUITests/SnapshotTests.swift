@@ -59,6 +59,14 @@ let asking = AgentState(
 let idle175 = AgentState(
     session: "s2", repo: repo, path: "\(wt)/build-175", lastEventAt: ago(9), lastKind: "agent.stopped")
 
+/// Claude Code's own status: the 175 session was seen going idle 9 min ago.
+let claudeSessions: ClaudeSessions = {
+    var c = ClaudeSessions()
+    c.update(["s2": .busy], at: ago(30))
+    c.update(["s2": .idle], at: ago(9))
+    return c
+}()
+
 func snapshot(
     builds: [BuildRow], agents: [AgentState] = [], sweep: SweepReport? = nil,
     error: RepoError? = nil
@@ -68,7 +76,7 @@ func snapshot(
             RepoSnapshot(
                 path: repo, status: StatusReport(builds: builds), statusAt: ago(0.2),
                 statusError: error, sweep: sweep, sweepAt: sweep == nil ? nil : ago(6))
-        ], agents: agents, now: now)
+        ], agents: agents, claude: claudeSessions, now: now)
 }
 
 let states: [(String, Board)] = [

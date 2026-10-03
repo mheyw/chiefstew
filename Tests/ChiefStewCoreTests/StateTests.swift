@@ -162,8 +162,11 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     let agent = AgentState(
         session: "s", repo: "/r", path: "/r/.claude/worktrees/agent-1", lastEventAt: now,
         lastKind: "agent.stopped")
+    var claude = ClaudeSessions()
+    claude.update(["s": .idle], at: now)
     let b = Board.make(
-        repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: rows))], agents: [agent], now: now)
+        repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: rows))], agents: [agent], claude: claude,
+        now: now)
     #expect(b.inProgress.count == 1)
     #expect(b.inProgress[0].worktree == "/r/.claude/worktrees/build-174")
     #expect(b.inProgress[0].agentLine != nil)
@@ -208,12 +211,54 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     let agent = AgentState(
         session: "s", repo: "/Users/you/my-app", path: "/Users/you/my-app/.claude/worktrees/build-173",
         lastEventAt: iso("2026-09-30T14:10:00Z"), lastKind: "agent.stopped", agent: "claude-code")
-    let b = Board.make(
-        repos: [RepoSnapshot(path: "/Users/you/my-app", status: try Fixture.status("status-full.json"))],
-        agents: [agent], now: iso("2026-09-30T14:19:00Z"))
-    let c = try #require(b.inProgress.first { $0.num == "173" })
-    #expect(c.agentLine == "Claude idle 9 min")
-    #expect(c.lastActivity == iso("2026-09-30T14:10:00Z"))
+    let at = iso("2026-09-30T14:19:00Z")
+    func line(_ claude: ClaudeSessions?) throws -> String? {
+        let b = Board.make(
+            repos: [RepoSnapshot(path: "/Users/you/my-app", status: try Fixture.status("status-full.json"))],
+            agents: [agent], claude: claude, now: at)
+        return try #require(b.inProgress.first { $0.num == "173" }).agentLine
+    }
+    // Without Claude Code's own status the card says nothing, even after a Stop.
+    #expect(try line(nil) == nil)
+    // A Stop with background agents still running: Claude Code says busy, and that wins.
+    var claude = ClaudeSessions()
+    claude.update(["s": .busy], at: iso("2026-09-30T14:00:00Z"))
+    #expect(try line(claude) == "Claude working")
+    // Seen going idle: how long is known.
+    claude.update(["s": .idle], at: iso("2026-09-30T14:10:00Z"))
+    #expect(try line(claude) == "Claude idle 9 min")
+    // Idle at first sight: how long isn't.
+    var fresh = ClaudeSessions()
+    fresh.update(["s": .idle], at: at)
+    #expect(try line(fresh) == "Claude idle")
+    // A session Claude Code no longer lists has ended.
+    claude.update([:], at: at)
+    #expect(try line(claude) == nil)
+}
+
+@Test func claudeSessionsParseAndLocate() {
+    let json = Data("""
+        [{"pid":1,"sessionId":"a","status":"busy","cwd":"/r"},{"sessionId":"b","status":"idle"},
+         {"sessionId":"c","status":"something-new"},{"status":"busy"}]
+        """.utf8)
+    #expect(ClaudeSessions.parse(json) == ["a": .busy, "b": .idle])
+    #expect(ClaudeSessions.parse(Data("not json".utf8)) == nil)
+    // An alias isn't on PATH; the usual install location is found instead.
+    let found = ClaudeSessions.locate(path: "/usr/bin:/bin", home: "/Users/you") {
+        $0 == "/Users/you/.claude/local/claude"
+    }
+    #expect(found == "/Users/you/.claude/local/claude")
+    #expect(ClaudeSessions.locate(path: "/usr/bin", home: "/Users/you") { _ in false } == nil)
+}
+
+@Test func tasksShowOnlyOnceOneIsDone() {
+    func card(_ done: Int) -> BuildCard? {
+        let row = BuildRow(num: "1", slug: "a", lastCommitAt: now, tasks: TaskCount(done: done, total: 100))
+        return Board.make(repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: [row]))], agents: [], now: now)
+            .inProgress.first
+    }
+    #expect(card(0)?.tasks == nil)  // a plan still being written isn't 0% done
+    #expect(card(3)?.tasks == TaskCount(done: 3, total: 100))
 }
 
 @Test func agentOutsideAnyBuildStillNeedsYou() throws {

@@ -17,7 +17,7 @@ A repo can do any subset:
 
 | Repo provides | Owner sees |
 |---|---|
-| Nothing | Its agents: which session is asking a question or needs permission, and which is idle. This comes from Chief Stew's own Claude Code hooks. |
+| Nothing | Its agents: which session is asking a question or needs permission (from Chief Stew's own Claude Code hooks), and which is working or idle (from Claude Code's own session list). |
 | A status command | Its builds as well: phases, gates waiting for sign-off, tasks, parked and unmerged work |
 | A sweep command | Leftovers too: leaked databases, stray processes and routes |
 | Events from its scripts | Gates and phase changes appear at once, not at the next poll |

@@ -354,3 +354,24 @@ private let typical = """
     #expect(progress == PathMatch.normalize(wt.path) + "/docs/features/a/PLAN.md")
     #expect(FileManager.default.fileExists(atPath: progress))
 }
+
+/// A lane the repo states is reported; the default only picks the route.
+@Test func aDefaultLaneDecidesTheRouteButIsNotReported() throws {
+    let (repo, _) = try sampleRepo()
+    try write(repo, "work/012_login/STATUS.md", "Designing\nLane: fast\n")
+    try write(repo, "work/012_login/PLAN.md", plan)
+    try write(repo, "work/013_billing/STATUS.md", "Building\n")
+    try write(repo, "work/013_billing/PLAN.md", plan)
+    let spec = try WorkflowSpec.parse([
+        "builds": ["from": "folders", "folder": "work/{num}_{slug}"],
+        "lane": ["file": "STATUS.md", "match": "^Lane: (?<lane>\\w+)", "default": "full"],
+        "phases": [
+            "file": "PLAN.md", "section": "Phases", "list": "checkboxes",
+            "skip": ["lane": "full", "phases": [2]],
+        ],
+    ]).get()
+    let rows = WorkflowEngine(repo: repo.path, spec: spec).run().report.builds
+    #expect(rows.map(\.lane) == ["fast", nil])
+    #expect(rows[0].phases?.map { $0.skipped == true } == [false, false, false])
+    #expect(rows[1].phases?.map { $0.skipped == true } == [false, true, false])  // the default's route
+}

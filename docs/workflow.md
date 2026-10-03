@@ -97,12 +97,12 @@ Every field below says where to read:
 | Field | How it reads | Becomes |
 |---|---|---|
 | `state` | `pick`: `first-line` (the default) or `first-quote` (the first `> ` blockquote); or `match`: a regex (named group `state`, else the first group) | the build's one-line status. Without it, the last commit subject is used. |
-| `lane` | `match` (group `lane`), with an optional `default` | a route name, used by `phases.skip` |
-| `parked` | `state`: a regex on the state line | set aside: dimmed, and doesn't need you |
+| `lane` | `match` (group `lane`), with an optional `default` | a route name, used by `phases.skip`. Shown on the build only when the file states it; the `default` picks the route but isn't shown. |
+| `parked` | `state`: a regex on the state line | set aside: tagged parked, listed last, and doesn't need you |
 | `closed` | `state`: a regex on the state line | finished but not merged: needs you |
 | `phases` | `list`: `"checkboxes"` (each `- [ ]`/`- [x]` line is a phase), or a regex applied per line with groups `n`, `name`, `done` (`x` or `true` means done), `started`, `doneAt`. Optional `skip: { "lane": "fast", "phases": [2, 3] }`. | the phase dots. The first unfinished phase is active, or the one with a `started` time if your regex captures `started`. |
 | `gates` | `list`: a regex per line with groups `gate`, `status` (words like waiting/open/pending, or approved/passed/done), `at`; or `"checkboxes"` (unticked means waiting). Optional `phase` (gate → phase number), `artefact` (one path template, or gate → path), and `approve` (a command template using `{gate}`, `{num}`, `{slug}`). | gates. A waiting gate **needs you**, with the artefact to open (a read-only copy from git when the build isn't checked out) and the approve command to copy (Chief Stew never runs it). |
-| `tasks` | `count: "checkboxes"` | done / total |
+| `tasks` | `count: "checkboxes"` | done / total, shown once at least one is done |
 
 Unknown keys are reported by `chiefstew check`, so a typo never silently does nothing.
 

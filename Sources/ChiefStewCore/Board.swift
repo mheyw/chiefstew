@@ -59,7 +59,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     public var state: String
     public var startedAt: Date?
     public var lastActivity: Date
-    /// `Claude idle 9 min`, `Claude active 3 min ago`; nil with no agent events.
+    /// `Claude working`, `Claude idle 9 min`, from Claude Code's own session status; nil when
+    /// that isn't known.
     public var agentLine: String?
     public var behind: Int?
     public var flags: [String]
@@ -71,8 +72,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// Set aside on purpose: the Current state line starts with "Parked". Shown dimmed and last,
     /// and never in the menu-bar title.
     public var parked: Bool = false
-    /// An agent session in this build's checkout is mid-turn right now. On a parked build it
-    /// means the build was picked up again before its Current state line said so.
+    /// Claude Code says a session in this build's checkout is busy. On a parked build it means
+    /// the build was picked up again before its Current state line said so.
     public var agentWorking: Bool = false
 
     /// The row's one status label, next to its name.
@@ -217,8 +218,11 @@ extension Board {
     /// Status + sweep + agent state → what the panel and menu bar show. Pure.
     /// - Parameter eventGates: gates known only from events; shown for a repo whose status
     ///   can't show them (not registered, not read yet, or failing).
+    /// - Parameter claude: Claude Code's own session status; nil when it couldn't be read, and
+    ///   then the board says nothing about whether agents are working.
     public static func make(
-        repos: [RepoSnapshot], agents: [AgentState], eventGates: [EventGates.Wait] = [], now: Date
+        repos: [RepoSnapshot], agents: [AgentState], eventGates: [EventGates.Wait] = [],
+        claude: ClaudeSessions? = nil, now: Date
     ) -> Board {
         var board = Board()
         board.repoNames = repos.map(\.name)
@@ -258,7 +262,7 @@ extension Board {
         for (repo, row, _) in builds {
             let id = cardID(repo, row)
             let agents = sessionsByBuild[id] ?? []
-            let card = makeCard(repo: repo, row: row, agents: agents, now: now)
+            let card = makeCard(repo: repo, row: row, agents: agents, claude: claude, now: now)
 
             // A parked build was set aside on purpose: its gate or merge doesn't need you now.
             if !card.parked {
@@ -346,8 +350,9 @@ extension Board {
         "\(repo.path)#\(row.num)"
     }
 
-    static func makeCard(repo: RepoSnapshot, row: BuildRow, agents: [AgentState], now: Date)
-        -> BuildCard
+    static func makeCard(
+        repo: RepoSnapshot, row: BuildRow, agents: [AgentState], claude: ClaudeSessions?, now: Date
+    ) -> BuildCard
     {
         let waiting = Set(row.waitingGates.compactMap(\.phase))
         // Phases off this build's route (marked `skipped` by the status) are hidden.
@@ -375,22 +380,31 @@ extension Board {
         }
 
         let latest = agents.max { $0.lastEventAt < $1.lastEventAt }
-        let agentLine = latest.map { a in
-            a.isIdle
-                ? "\(a.displayName) idle \(Durations.short(now.timeIntervalSince(a.lastEventAt)))"
-                : "\(a.displayName) active \(Durations.ago(now.timeIntervalSince(a.lastEventAt)))"
+        let live = claude.map { c in agents.compactMap { c.sessions[$0.session] } } ?? []
+        let busy = live.filter { $0.status == .busy }.count
+        let idle = live.filter { $0.status == .idle }
+        var agentLine: String?
+        if busy > 0 {
+            agentLine = busy == 1 ? "Claude working" : "\(busy) Claude sessions working"
+        } else if live.contains(where: { $0.status == .waiting }) {
+            agentLine = "Claude waiting for you"
+        } else if !idle.isEmpty {
+            // How long only if Chief Stew saw every one of them go idle.
+            let since = idle.allSatisfy { $0.since != nil } ? idle.compactMap(\.since).max() : nil
+            agentLine = "Claude idle" + (since.map { " \(Durations.short(now.timeIntervalSince($0)))" } ?? "")
         }
 
         return BuildCard(
             id: cardID(repo, row), repoName: repo.name, num: row.num, slug: row.slug,
-            lane: row.lane, dots: dots, phaseLabel: label, tasks: row.tasks,
+            // None ticked reads as progress that isn't happening (a plan still being written).
+            lane: row.lane, dots: dots, phaseLabel: label, tasks: row.tasks.flatMap { $0.done > 0 ? $0 : nil },
             state: row.state, startedAt: row.phases?.first(where: { $0.n == 1 })?.startedAt,
             lastActivity: max(row.lastCommitAt, latest?.lastEventAt ?? .distantPast),
             agentLine: agentLine, behind: row.behind, flags: row.flags, worktree: row.worktree,
             progress: row.progress, url: row.urls["admin"] ?? row.urls.values.sorted().first,
             staleSince: repo.statusError?.since,
             parked: row.isParked,
-            agentWorking: latest.map { !$0.isIdle && now.timeIntervalSince($0.lastEventAt) < 30 * 60 } ?? false)
+            agentWorking: busy > 0)
     }
 
     static func leftItems(repo: RepoSnapshot, sweep: SweepReport) -> [LeftItem] {

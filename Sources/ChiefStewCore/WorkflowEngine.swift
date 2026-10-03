@@ -304,11 +304,14 @@ public struct WorkflowEngine: Sendable {
             row.state = Self.plain(last?.subject ?? "")
         }
 
-        // lane, parked, closed
+        // lane, parked, closed. The default picks the route but isn't reported: it's an
+        // assumption, not something the repo says.
+        var route: String?
         if let rule = spec.lane {
             let (text, file, why, _) = read(rule.at, base: base, c)
             let value = text.flatMap { Self.extract($0, pick: rule.pick, match: rule.match, group: "lane") }
-            row.lane = value ?? rule.fallback
+            row.lane = value
+            route = value ?? rule.fallback
             note("lane", value != nil || rule.fallback != nil, value.map { "\(file ?? "") → \($0)" } ?? (why ?? "no match; default \(rule.fallback ?? "none")"))
         }
         if let re = spec.parked { row.parkedFlag = Self.matches(re, row.state) }
@@ -321,7 +324,7 @@ public struct WorkflowEngine: Sendable {
                 var phases = Self.phases(text, rule.list)
                 if let skip = spec.skip {
                     for i in phases.indices {
-                        phases[i].skipped = row.lane == skip.lane && skip.phases.contains(phases[i].n)
+                        phases[i].skipped = route == skip.lane && skip.phases.contains(phases[i].n)
                     }
                 }
                 row.phases = phases.isEmpty ? nil : phases

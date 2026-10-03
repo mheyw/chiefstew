@@ -139,20 +139,23 @@ func rejectsMalformedEvents(json: String, expected: EventError) {
         num: "173", slug: "search_index", state: "Parked 2026-09-30", lastCommitAt: iso("2026-09-30T17:00:00Z"),
         worktree: "/Users/you/my-app")
     let repos = [RepoSnapshot(path: "/Users/you/my-app", status: StatusReport(builds: [row]))]
-    func agent(_ kind: String, _ at: String) -> AgentState {
-        AgentState(session: "s1", repo: "/Users/you/my-app", path: "/Users/you/my-app", lastEventAt: iso(at), lastKind: kind)
-    }
+    let agent = AgentState(
+        session: "s1", repo: "/Users/you/my-app", path: "/Users/you/my-app",
+        lastEventAt: iso("2026-10-03T10:28:00Z"), lastKind: "agent.stopped")
     let now = iso("2026-10-03T10:30:00Z")
-    let working = Board.make(repos: repos, agents: [agent("agent.active", "2026-10-03T10:28:00Z")], now: now)
+    func board(_ status: ClaudeSessions.Status?) -> Board {
+        var claude = ClaudeSessions()
+        if let status { claude.update(["s1": status], at: now) }
+        return Board.make(repos: repos, agents: [agent], claude: claude, now: now)
+    }
+    // Claude Code says busy (its last hook event was a Stop: background agents still work).
+    let working = board(.busy)
     #expect(working.inProgress.first?.parked == true)  // the file still says parked
     #expect(working.inProgress.first?.agentWorking == true)
     #expect(working.inProgress.first?.tag == "parked · agent active")
     #expect(working.menu.title == nil)
-    // A finished turn, or one long ago, isn't work in progress.
-    let idle = Board.make(repos: repos, agents: [agent("agent.stopped", "2026-10-03T10:28:00Z")], now: now)
-    #expect(idle.inProgress.first?.agentWorking == false)
-    let old = Board.make(repos: repos, agents: [agent("agent.active", "2026-10-03T09:00:00Z")], now: now)
-    #expect(old.inProgress.first?.agentWorking == false)
+    #expect(board(.idle).inProgress.first?.agentWorking == false)
+    #expect(board(nil).inProgress.first?.agentWorking == false)  // the session has ended
 }
 
 @Test func parkedSortsLastAndIsSkippedForTheTitle() {
