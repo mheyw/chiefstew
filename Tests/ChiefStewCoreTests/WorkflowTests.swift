@@ -514,3 +514,27 @@ private func commit(_ dir: URL, as name: String, _ email: String, _ message: Str
     #expect(prompt.contains("never \"step 1\""))
     #expect(prompt.contains("give `tasks` that phase's number as `phase`"))
 }
+
+// MARK: - A build's time budget
+
+@Test func theBudgetIsReadFromTheBuildsOwnFiles() throws {
+    let (repo, wt) = try sampleRepo()
+    try write(wt, "docs/features/a/STATUS.md", "In review\nSize: L (2h)\n")
+    func spec(_ match: String) throws -> WorkflowSpec {
+        try WorkflowSpec.parse([
+            "builds": ["from": "branches", "branch": "feature/{slug}", "folder": "docs/features/{slug}"],
+            "budget": ["file": "STATUS.md", "match": match],
+        ] as [String: Any]).get()
+    }
+    let r = WorkflowEngine(repo: repo.path, spec: try spec(#"^Size: (?<label>\w+) \((?<hours>[\d.]+)h\)"#)).runExplained()
+    #expect(r.report.builds.first { $0.slug == "a" }?.budget == Budget(hours: 2, label: "L"))
+    #expect(r.report.builds.first { $0.slug == "c" }?.budget == nil)  // its STATUS.md has no Size line
+    let note = r.diagnostics.first { $0.slug == "a" }?.notes.first { $0.field == "budget" }
+    #expect(note?.ok == true && note?.detail.hasSuffix("→ L · 2h") == true)
+
+    guard case .failure(let p) = WorkflowSpec.parse([
+        "builds": ["from": "worktrees"], "budget": ["file": "STATUS.md", "match": "^Size: (\\w+)"],
+    ] as [String: Any]) else { Issue.record("expected a problem"); return }
+    #expect(p.list.map(\.path) == ["workflow.budget.match"])
+    #expect(Budget(hours: 0.5).text == "30 min" && Budget(hours: 4).text == "4h" && Budget(hours: 1.5).text == "1h 30m")
+}

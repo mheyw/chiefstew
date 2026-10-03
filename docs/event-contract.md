@@ -229,6 +229,7 @@ The status command prints one JSON object to stdout and nothing else:
 | `mine` | no | `true` if this clone's git user (`user.email`) wrote any of the build's commits, `false` if not. Absent when that can't be told; the build then counts as yours. |
 | `onlyOnOrigin` | no | `true`: the branch exists only on origin, so there's nothing checked out here. |
 | `branchURL` | no | The branch's web page, offered as "Open on GitHub" when there's no checkout. |
+| `budget` | no | `{ "hours": 2, "label": "L" }`: how long the build is meant to take, wall clock from its first phase's start. Shown as elapsed against it (`L · 1h 10m of 2h`, then `over by 35 min`), except for a parked or closed build. Once one of yours is over, it gets one quiet notice. `label` is optional. |
 
 Anything optional can be left out: a row with only the required fields still shows. A row that fails to decode is skipped and counted, and never takes down the rest.
 

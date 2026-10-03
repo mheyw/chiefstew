@@ -85,6 +85,8 @@ public struct BuildRow: Decodable, Sendable, Equatable {
     public var onlyOnOrigin: Bool?
     /// The branch's web page, when origin is a known host.
     public var branchURL: String?
+    /// How long the build is meant to take, wall clock from its first phase's start.
+    public var budget: Budget?
 
     public init(
         num: String, slug: String, branch: String = "", state: String = "",
@@ -113,7 +115,7 @@ public struct BuildRow: Decodable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case num, slug, branch, state, lastCommitAt, merged, worktree, worktrees, behind, flags, lane,
-            phases, gates, tasks, urls, progress, parked, author, mine, onlyOnOrigin, branchURL
+            phases, gates, tasks, urls, progress, parked, author, mine, onlyOnOrigin, branchURL, budget
     }
 
     public init(from decoder: Decoder) throws {
@@ -139,6 +141,7 @@ public struct BuildRow: Decodable, Sendable, Equatable {
         mine = c.lenient(Bool.self, .mine)
         onlyOnOrigin = c.lenient(Bool.self, .onlyOnOrigin)
         branchURL = c.lenient(String.self, .branchURL)
+        budget = c.lenient(Budget.self, .budget).flatMap { $0.hours > 0 ? $0 : nil }
     }
 
     public var isParked: Bool {
@@ -147,6 +150,25 @@ public struct BuildRow: Decodable, Sendable, Equatable {
 
 
     public var waitingGates: [GateInfo] { gates.filter { $0.status == "waiting" } }
+}
+
+/// A build's time budget (contract § 4b): hours, wall clock, and the repo's name for that size.
+public struct Budget: Codable, Sendable, Equatable {
+    public var hours: Double
+    /// e.g. `L`; shown before the clock.
+    public var label: String?
+
+    public init(hours: Double, label: String? = nil) {
+        self.hours = hours
+        self.label = label
+    }
+
+    /// `30 min`, `2h`, `1h 30m`.
+    public var text: String {
+        let minutes = Int((hours * 60).rounded())
+        if minutes < 60 { return "\(minutes) min" }
+        return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    }
 }
 
 public struct PhaseInfo: Decodable, Sendable, Equatable {

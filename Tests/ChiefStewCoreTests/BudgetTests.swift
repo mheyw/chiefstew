@@ -1,0 +1,64 @@
+@testable import ChiefStewCore
+import Foundation
+import Testing
+
+// A build's time budget on the board: the clock, who it's over budget for, and the one quiet
+// notice that says so.
+
+private let repo = "/Users/you/my-app"
+private let start = iso("2026-10-03T10:00:00Z")
+
+private func row(_ num: String, hours: Double?, parked: Bool = false, closed: Bool = false, mine: Bool? = nil) -> BuildRow {
+    var r = BuildRow(
+        num: num, slug: "b\(num)", state: parked ? "Parked" : "Phase 5", lastCommitAt: start,
+        flags: closed ? ["closed-unmerged"] : [],
+        phases: [PhaseInfo(n: 1, name: "Intent", status: "done", startedAt: start), PhaseInfo(n: 2, name: "Execute", status: "active")])
+    r.budget = hours.map { Budget(hours: $0, label: "L") }
+    r.mine = mine
+    return r
+}
+
+private func board(_ rows: [BuildRow], at now: Date) -> Board {
+    Board.make(repos: [RepoSnapshot(path: repo, status: StatusReport(builds: rows), statusAt: now)], agents: [], now: now)
+}
+
+@Test func overBudgetIsYourOpenBuildsPastTheirBudget() {
+    let now = start.addingTimeInterval(2.5 * 3600)
+    let b = board([
+        row("001", hours: 2),  // over (authorship unknown counts as yours)
+        row("002", hours: 4),  // within
+        row("003", hours: 2, parked: true),  // parked: no clock
+        row("004", hours: 2, closed: true),  // closed: its clock has stopped
+        row("005", hours: 2, mine: false),  // a teammate's: not yours to be told about
+        row("006", hours: nil),  // no budget
+    ], at: now)
+    #expect(b.overBudget.map(\.num) == ["001"])
+    let within = b.inProgress.first { $0.num == "002" }
+    #expect(within?.budgetClock(now: now)?.elapsed == 2.5 * 3600)
+    #expect(b.inProgress.first { $0.num == "003" }?.budgetClock(now: now) == nil)
+}
+
+@Test func overBudgetSendsOneQuietNoticeAndWithdrawsItWhenTheBuildIsDone() {
+    let now = start.addingTimeInterval(2.5 * 3600)
+    let over = board([row("001", hours: 2)], at: now)
+    let first = NotificationPlanner.plan(board: over, ledger: NoticeLedger(), settings: Preferences(), now: now, loaded: [repo])
+    #expect(first.post.count == 1)
+    let notice = first.post[0]
+    #expect(notice.passive && !notice.isReminder)
+    #expect(notice.title == "001 is over its budget")
+    #expect(notice.body == "b001 has run 2h 30m (budget L, 2h). Worth noting why while it's fresh.")
+
+    // Still over an hour later: nothing new.
+    let later = now.addingTimeInterval(3600)
+    let again = NotificationPlanner.plan(board: board([row("001", hours: 2)], at: later), ledger: first.ledger, settings: Preferences(), now: later, loaded: [repo])
+    #expect(again.post.isEmpty && again.withdraw.isEmpty)
+
+    // Closed: the notice goes.
+    let done = NotificationPlanner.plan(board: board([row("001", hours: 2, closed: true)], at: later), ledger: first.ledger, settings: Preferences(), now: later, loaded: [repo])
+    #expect(done.withdraw == [notice.id])
+
+    // Turned off: nothing.
+    var off = Preferences()
+    off.notifyBudget = false
+    #expect(NotificationPlanner.plan(board: over, ledger: NoticeLedger(), settings: off, now: now, loaded: [repo]).post.isEmpty)
+}

@@ -68,6 +68,8 @@ public struct WorkflowSpec: Sendable, Equatable {
     public var tasks: Locator?
     /// The phases the tasks belong to: they're reported only while one of them is active.
     public var tasksPhases: [Int]?
+    /// Where a build's time budget is written: a regex with named groups `hours` and `label`.
+    public var budget: TextRule?
     /// Keys this copy doesn't know: ignored, and reported by `chiefstew check`. A typo, or a key a
     /// newer Chief Stew understands, so a description written for a newer copy still works here.
     public var warnings: [Problem] = []
@@ -76,7 +78,7 @@ public struct WorkflowSpec: Sendable, Equatable {
         a.builds == b.builds && a.includeRemote == b.includeRemote && a.folder == b.folder && a.state == b.state && a.lane == b.lane
             && a.parked == b.parked && a.closed == b.closed && a.phases == b.phases
             && a.skip?.lane == b.skip?.lane && a.skip?.phases == b.skip?.phases && a.gates == b.gates
-            && a.tasks == b.tasks && a.tasksPhases == b.tasksPhases
+            && a.tasks == b.tasks && a.tasksPhases == b.tasksPhases && a.budget == b.budget
     }
 
     /// One problem in the description, with where it is (`workflow.phases.list`).
@@ -103,7 +105,7 @@ public struct WorkflowSpec: Sendable, Equatable {
         guard let w = any as? [String: Any] else {
             return .failure(Problems(list: [Problem(path: "workflow", message: "must be an object")]))
         }
-        let known: Set<String> = ["builds", "folder", "state", "lane", "parked", "closed", "phases", "gates", "tasks"]
+        let known: Set<String> = ["builds", "folder", "state", "lane", "parked", "closed", "phases", "gates", "tasks", "budget"]
         for key in w.keys.sorted() where !known.contains(key) {
             unknown("workflow.\(key)", known)
         }
@@ -138,6 +140,7 @@ public struct WorkflowSpec: Sendable, Equatable {
             "phases": ["file", "section", "list", "skip"],
             "gates": ["file", "section", "list", "phase", "artefact", "approve"],
             "tasks": ["file", "section", "count", "phase"],
+            "budget": ["file", "section", "match"],
         ]
         func object(_ key: String) -> [String: Any]? {
             guard let v = w[key] else { return nil }
@@ -229,6 +232,13 @@ public struct WorkflowSpec: Sendable, Equatable {
                 rule.artefactTemplate = a
             }
             spec.gates = rule
+        }
+        if w["budget"] != nil, let rule = textRule("budget") {
+            if let m = rule.match, m.contains("(?<hours>") {
+                spec.budget = rule
+            } else {
+                fail("workflow.budget.match", "a regular expression with a named group `hours` is required, e.g. \"^Size: (?<label>\\\\w+) \\\\((?<hours>[\\\\d.]+)h\\\\)\"")
+            }
         }
         if let o = object("tasks") {
             if o["count"] as? String != "checkboxes" { fail("workflow.tasks.count", "use \"checkboxes\"") }

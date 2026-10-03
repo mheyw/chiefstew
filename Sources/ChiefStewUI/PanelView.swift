@@ -430,7 +430,16 @@ struct BuildRowView: View {
                 name: Text("\(card.num) ").monospacedDigit() + Text(card.slug),
                 tag: card.tag, help: "\(card.num) \(card.slug)"
             ) {
-                if let started = card.startedAt {
+                if let clock = card.budgetClock(now: now), let budget = card.budget {
+                    let label = budget.label.map { "\($0) · " } ?? ""
+                    if clock.elapsed > clock.budget {
+                        Text("\(label)over by \(Durations.short(clock.elapsed - clock.budget))")
+                            .foregroundStyle(Palette.attentionText)
+                            .help("\(Durations.short(clock.elapsed)) of a \(budget.text) budget")
+                    } else {
+                        Text("\(label)\(clock.elapsed < 60 ? "0 min" : Durations.short(clock.elapsed)) of \(budget.text)")
+                    }
+                } else if let started = card.startedAt {
                     Text(Durations.short(now.timeIntervalSince(started)))
                 }
             }

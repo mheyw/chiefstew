@@ -138,3 +138,20 @@ func live(_ sweep: SweepReport? = nil) -> RepoSnapshot {
     #expect(two.leftTarget == WindowSelection(repo: nil, tab: .leftBehind))
     #expect(two.leftSummary == "2 leaked databases, 2 processes in deleted folders, 2 stray routes")
 }
+
+/// The build row's clock against its budget: within (`L · 1h 42m of 2h`) and over.
+@Test @MainActor func budgetClockRenders() throws {
+    var within = b173
+    within.budget = Budget(hours: 2, label: "L")
+    var over = b175
+    over.budget = Budget(hours: 0.25, label: "S")
+    let board = Board.make(
+        repos: [RepoSnapshot(path: repo, status: StatusReport(builds: [within, over]), statusAt: ago(0.2))],
+        agents: [], now: now)
+    #expect(board.overBudget.map(\.num) == ["175"])
+    for dark in [false, true] {
+        let image = try #require(render(PanelView(board: board, now: now), dark: dark))
+        #expect(image.size.width == PanelView.width)
+        try write(image, "panel-budget\(dark ? "-dark" : "")")
+    }
+}

@@ -129,7 +129,8 @@ private struct NotificationsPane: View {
                 Toggle("An agent needs input", isOn: $model.settings.notifyAgents)
                 Toggle("A closed build isn't merged", isOn: $model.settings.notifyUnmerged)
                 Toggle("A teammate's closed build isn't merged", isOn: $model.settings.notifyTeam)
-                Text("Teammates' builds notify quietly: straight to Notification Centre, with no banner or sound, and gone after a day.")
+                Toggle("A build of mine runs past its budget", isOn: $model.settings.notifyBudget)
+                Text("These two notify quietly: straight to Notification Centre, with no banner or sound. A teammate's build is gone after a day; a budget notice when the build closes.")
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

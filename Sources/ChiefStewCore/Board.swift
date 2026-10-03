@@ -91,6 +91,17 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     public var agentWorking: Bool = false
     /// The repo it's in, so the window can show it under its repo.
     public var repoPath: String = ""
+    /// How long it's meant to take, wall clock from its first phase's start.
+    public var budget: Budget?
+    /// This clone's git user wrote some of it; nil when that can't be told (counts as yours).
+    public var mine: Bool?
+
+    /// Elapsed against the budget, for a build that has one, has started, and is neither parked
+    /// nor closed (a closed build's clock has stopped, and Chief Stew doesn't know when).
+    public func budgetClock(now: Date) -> (elapsed: TimeInterval, budget: TimeInterval)? {
+        guard let budget, let startedAt, !parked, !flags.contains("closed-unmerged") else { return nil }
+        return (now.timeIntervalSince(startedAt), budget.hours * 3600)
+    }
 
     /// The row's one status label, next to its name.
     public var tag: String? {
@@ -174,6 +185,8 @@ public struct Board: Sendable, Equatable {
     public var leftCleanup: [String] = []
     public var sweptAt: Date?
     public var problems: [Problem] = []
+    /// Your builds running past their budget (a quiet notice each; never "needs you").
+    public var overBudget: [BuildCard] = []
     public var repoNames: [String] = []
     /// Registered repos whose status hasn't been read yet (first poll still running).
     public var loading: [String] = []
@@ -341,6 +354,14 @@ extension Board {
                     since: wait.since, card: card, repoName: name, worktree: nil, repoPath: wait.repo))
         }
 
+        var seenCards = Set<String>()
+        board.overBudget = (board.needsYou.compactMap(\.card) + board.inProgress)
+            .filter { seenCards.insert($0.id).inserted }
+            .filter { card in
+                guard card.mine != false, let clock = card.budgetClock(now: now) else { return false }
+                return clock.elapsed > clock.budget
+            }
+            .sorted { $0.id < $1.id }
         board.needsYou.sort { ($0.since, $0.id) < ($1.since, $1.id) }
         board.team.sort { ($0.since, $0.id) < ($1.since, $1.id) }
         board.inProgress.sort {
@@ -427,7 +448,7 @@ extension Board {
             parked: row.isParked,
             branch: row.branch, branchURL: row.branchURL, author: row.author,
             onlyOnOrigin: row.onlyOnOrigin == true, fetchedAt: repo.status?.fetchedAt, agentWorking: busy > 0,
-            repoPath: repo.path)
+            repoPath: repo.path, budget: row.budget, mine: row.mine)
     }
 
     static func leftItems(repo: RepoSnapshot, sweep: SweepReport) -> [LeftItem] {

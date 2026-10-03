@@ -19,6 +19,11 @@ public enum StatusJSON {
             if !b.flags.isEmpty { row["flags"] = b.flags }
             if let v = b.lane { row["lane"] = v }
             if let v = b.parkedFlag { row["parked"] = v }
+            if let v = b.budget {
+                var budget: [String: Any] = ["hours": v.hours]
+                if let label = v.label { budget["label"] = label }
+                row["budget"] = budget
+            }
             if let phases = b.phases {
                 row["phases"] = phases.map { p -> [String: Any] in
                     var d: [String: Any] = ["n": p.n, "name": p.name, "status": p.status]

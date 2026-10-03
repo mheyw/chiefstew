@@ -56,6 +56,7 @@ public enum SetupPrompt {
             - `artefact` is the file a reviewer opens at a gate. `approve` is the exact command that signs a gate off, if the repo has one. Chief Stew copies it and never runs it.
             - `parked` (set aside) and `closed` (finished, waiting to merge) are regular expressions on the state line.
             - If the tasks belong to one phase (a plan's tasks are built in an "implement" or "execute" phase), give `tasks` that phase's number as `phase`, so the count isn't shown for the rest of the build.
+            - If each build records how long it's meant to take (e.g. `Size: L (2h)`), describe it with `budget` (a regex with named groups `hours` and `label`). Chief Stew then shows elapsed time against it.
 
             What not to add (Chief Stew already covers it, and a second source makes it double up):
             - **No Claude Code hooks and no `agent.*` events.** Chief Stew's own hooks, installed once for every repo, already say when an agent needs the owner, ends a turn or gets an answer.

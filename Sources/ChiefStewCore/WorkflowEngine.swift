@@ -465,6 +465,27 @@ public struct WorkflowEngine: Sendable {
                 note("tasks", false, why ?? "not found")
             }
         }
+        // budget
+        if let rule = spec.budget, let pattern = rule.match {
+            let (text, file, why, _) = read(rule.at, base: base, c)
+            if let text, let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]),
+                let m = re.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+            {
+                let ns = text as NSString
+                func group(_ name: String) -> String? {
+                    let r = m.range(withName: name)
+                    return r.location == NSNotFound ? nil : ns.substring(with: r)
+                }
+                if let hours = group("hours").flatMap(Double.init), hours > 0 {
+                    row.budget = Budget(hours: hours, label: group("label"))
+                    note("budget", true, "\(file ?? "") → \(row.budget!.label.map { "\($0) · " } ?? "")\(row.budget!.text)")
+                } else {
+                    note("budget", false, "\(file ?? "") → \"\(group("hours") ?? "")\" isn't a number of hours")
+                }
+            } else {
+                note("budget", false, why ?? "\(file ?? "") has no line matching the budget rule")
+            }
+        }
         return (row, notes)
     }
 

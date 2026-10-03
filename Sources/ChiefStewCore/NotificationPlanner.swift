@@ -35,7 +35,8 @@ public struct NoticeLedger: Codable, Equatable, Sendable {
 }
 
 /// Board → notifications. Pure. Needs-you items notify, never progress. A teammate's unmerged
-/// build gets one passive notice that goes away after `teamNoticeLifetime`.
+/// build gets one passive notice that goes away after `teamNoticeLifetime`. A build of yours past
+/// its budget gets one passive notice, withdrawn when it closes, merges or is parked.
 public enum NotificationPlanner {
     public static let teamNoticeLifetime: TimeInterval = 24 * 3600
 
@@ -95,6 +96,15 @@ public enum NotificationPlanner {
             plan.ledger.sent[key] = now
         }
 
+        for card in board.overBudget {
+            guard let started = card.startedAt else { continue }
+            let key = "\(card.id)#budget@\(Int(started.timeIntervalSince1970))"
+            live.insert(key)
+            guard settings.notifyBudget, ledger.sent[key] == nil else { continue }
+            plan.post.append(budgetNotice(card, key: key, now: now))
+            plan.ledger.sent[key] = now
+        }
+
         for key in ledger.sent.keys where !live.contains(key) {
             let repo = key.components(separatedBy: "#").first ?? ""
             let fromEvents = registered.map { !$0.contains(repo) } ?? false
@@ -114,6 +124,16 @@ public enum NotificationPlanner {
         case .agent: s.notifyAgents
         case .unmerged: s.notifyUnmerged
         }
+    }
+
+    static func budgetNotice(_ card: BuildCard, key: String, now: Date) -> Notice {
+        let elapsed = card.startedAt.map { Durations.short(now.timeIntervalSince($0)) } ?? ""
+        let budget = card.budget.map { ($0.label.map { "\($0), " } ?? "") + $0.text } ?? ""
+        let name = card.slug.isEmpty ? card.repoName : card.slug
+        return Notice(
+            id: key, title: "\(card.num) is over its budget",
+            body: "\(name) has run \(elapsed) (budget \(budget)). Worth noting why while it's fresh.",
+            open: card.progress ?? card.worktree, isReminder: false, passive: true)
     }
 
     static func teamNotice(_ item: NeedsItem, key: String, now: Date) -> Notice {
