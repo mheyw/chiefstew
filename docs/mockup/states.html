@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <title>Chief Stew — states mockup</title>
 <style>
-  :root { --orange:#e8750a; --red:#d93a2f; --green:#2e9d4f; --blue:#0a66d8; --sec:#6e6e73; --ter:#a1a1a6; --sep:rgba(0,0,0,.09); }
+  :root { --orange:#e8750a; --red:#d93a2f; --orange-text:#b03a00; --red-text:#c4161c; --green:#2e9d4f; --blue:#0a66d8; --sec:#6e6e73; --ter:#a1a1a6; --sep:rgba(0,0,0,.09); }
   * { box-sizing:border-box; }
   body { margin:0; padding:28px 32px 36px; font:13px/1.35 -apple-system, "SF Pro Text", system-ui, sans-serif; color:#1d1d1f;
          background:linear-gradient(160deg,#c9d6e8 0%,#dfd3e6 55%,#e9dccd 100%); width:1000px; }
@@ -28,6 +28,7 @@
   .badge { position:absolute; right:-2px; top:-1px; width:7px; height:7px; border-radius:50%; background:var(--orange);
            box-shadow:0 0 0 1.5px rgba(246,246,246,.95); }
   .attn { color:var(--orange); font-weight:600; }
+  .attn-t { color:var(--orange-text); font-weight:600; }
 
   /* panels */
   .grid { display:grid; grid-template-columns:repeat(2, 452px); gap:26px 32px; }
@@ -40,7 +41,7 @@
   .sect + .sect { border-top:1px solid var(--sep); }
   .stitle { font-size:11px; font-weight:600; color:var(--sec); letter-spacing:.04em; text-transform:uppercase; margin-bottom:6px;
             display:flex; justify-content:space-between; }
-  .stitle.o { color:var(--orange); }
+  .stitle.o { color:var(--orange-text); }
   .row { padding:5px 0 8px; }
   .row + .row { border-top:1px dashed rgba(0,0,0,.07); padding-top:8px; }
   .l1 { display:flex; align-items:center; gap:7px; }
@@ -64,6 +65,7 @@
   .tag { font-size:10.5px; padding:0 5px; border-radius:3px; background:rgba(0,0,0,.06); color:#48484a; margin-left:2px; font-weight:500; }
   .tag.fast { background:#e6f0fd; color:var(--blue); }
   .warn { color:var(--orange); }
+  .right.warn { color:var(--orange-text); }
   .empty { padding:22px 16px 20px; text-align:center; color:var(--sec); }
   .empty .big { font-size:14px; color:#3a3a3c; margin-bottom:3px; }
   .foot { display:flex; gap:16px; padding:8px 16px 9px; border-top:1px solid var(--sep); background:rgba(0,0,0,.025); color:#3a3a3c; font-size:12.5px; }
@@ -139,11 +141,11 @@
 <!-- NEEDS YOU -->
 <div class="state"><h2>3 · Needs you <span>— a gate, an agent question, an unmerged close</span></h2>
 <div class="panel">
-  <div class="phead"><b>Chief Stew</b><span>3 builds · <span class="attn">3 need you</span></span></div>
+  <div class="phead"><b>Chief Stew</b><span>3 builds · <span class="attn-t">3 need you</span></span></div>
   <div class="sect"><div class="stitle o">Needs you</div>
     <div class="row">
       <div class="l1"><span class="dot" style="background:var(--orange)"></span><span class="name"><span class="n">174</span> checkout_flow</span><span class="right warn">Plan gate · 12 min</span></div>
-      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="w"></i><i></i><i></i><i></i></span>Plan ready — waiting on your sign-off</div>
+      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="w"></i><i></i><i></i><i></i></span>Plan ready, waiting on your sign-off</div>
       <div class="acts"><span class="btn p">Open plan.md</span><span class="btn">Open worktree</span><span class="btn">Copy approve command</span></div>
     </div>
     <div class="row">
@@ -153,7 +155,7 @@
     </div>
     <div class="row">
       <div class="l1"><span class="dot" style="background:var(--orange)"></span><span class="name"><span class="n">172</span> bulk_actions</span><span class="right warn">Closed 2 d · not merged</span></div>
-      <div class="l2">Closed 2026-09-28 — merge to main today, then <span class="mono">record-merge</span></div>
+      <div class="l2">Closed 2026-09-28 · merge to main today, then <span class="mono">record-merge</span></div>
       <div class="acts"><span class="btn">Open worktree</span><span class="btn">Copy record-merge command</span></div>
     </div>
   </div>
@@ -166,7 +168,7 @@
   <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="muted">checked 12 s ago</span><span class="q2">Quit</span></div>
 </div>
 <div class="notif"><div class="ic" style="color:#fff"><svg><use href="#ferry"/></svg></div>
-  <div><div style="display:flex"><b>174 needs you</b></div><div class="t">Plan gate — checkout_flow</div></div><span class="ts">now</span></div>
+  <div><div style="display:flex"><b>174 needs you</b></div><div class="t">Plan gate · checkout_flow</div></div><span class="ts">now</span></div>
 </div>
 
 <!-- LEFT BEHIND -->
@@ -192,7 +194,7 @@
     </div>
     <div class="row">
       <div class="l1"><span class="warn">⚠</span><span class="name">1 stray portless route</span></div>
-      <div class="l3 mono">fix-b.api.my-app.localhost — process 5512 is gone</div>
+      <div class="l3 mono">fix-b.api.my-app.localhost · process 5512 is gone</div>
       <div class="acts"><span class="btn">Copy: portless prune</span></div>
     </div>
   </div>
@@ -202,18 +204,18 @@
 <!-- ERROR / STALE -->
 <div class="state"><h2>5 · Can't read a repo <span>— last good data kept, marked stale</span></h2>
 <div class="panel">
-  <div class="phead"><b>Chief Stew</b><span>1 build · <span style="color:var(--red)">1 repo stale</span></span></div>
-  <div class="sect"><div class="stitle" style="color:var(--red)">Problem</div>
+  <div class="phead"><b>Chief Stew</b><span>1 build · <span style="color:var(--red-text)">1 repo stale</span></span></div>
+  <div class="sect"><div class="stitle" style="color:var(--red-text)">Problem</div>
     <div class="row">
-      <div class="l1"><span class="dot" style="background:var(--red)"></span><span class="name">my-app — status failed</span><span class="right">since 14:01</span></div>
+      <div class="l1"><span class="dot" style="background:var(--red)"></span><span class="name">my-app</span><span class="right">status failed · since 14:01</span></div>
       <div class="l3 mono">node scripts/status.mjs: exit 1 · “not a git repository”</div>
       <div class="acts"><span class="btn">Retry</span><span class="btn">Repos…</span><span class="btn">Copy error</span></div>
     </div>
   </div>
-  <div class="sect" style="opacity:.55"><div class="stitle">In progress · as of 13:59</div>
+  <div class="sect"><div class="stitle">In progress · as of 13:59</div>
     <div class="row">
-      <div class="l1"><span class="dot" style="background:#8e8e93"></span><span class="name"><span class="n">173</span> search_index</span><span class="right">1h 39m</span></div>
-      <div class="l2"><span class="phases"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 6/11 tasks</div>
+      <div class="l1"><span class="dot" style="background:#8e8e93"></span><span class="name"><span class="n">173</span> search_index</span><span class="tag">stale</span><span class="right">1h 39m</span></div>
+      <div class="l2"><span class="phases" style="opacity:.6"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="a"></i><i></i><i></i></span>Implement · 6/11 tasks</div>
     </div>
   </div>
   <div class="foot"><span>↻ Refresh</span><span>Repos…</span><span>Settings…</span><span class="q2">Quit</span></div>
@@ -225,7 +227,8 @@
 <ol style="margin:0;padding-left:18px">
   <li><b>The menu bar is icon-only</b>: a dot means work in progress, orange means something needs you, a small triangle means something was left behind. Text there gets hidden when the menu bar is full (taking the icon with it); the detail lives in the panel and notifications.</li>
   <li><b>Order in the panel:</b> needs-you first (oldest waiting), then in progress by most recent activity, parked last.</li>
-  <li><b>Needs you</b> = a waiting gate, an agent asking for input, or <i>closed but not merged</i>. Colour: orange icon, badge and text.</li>
+  <li><b>Needs you</b> = a waiting gate, an agent asking for input, or <i>closed but not merged</i>. Colour: orange icon and badge; its text uses a darker orange that stays readable on a light panel.</li>
+  <li><b>A repo that can't be read</b> keeps its last good data. Its rows say <span class="tag">stale</span> rather than fading, so their text and buttons stay readable; only the dots dim. Parked builds work the same way.</li>
   <li><b>Left behind never takes over the menu bar</b>: just a small ⚠ beside the icon. It isn't urgent.</li>
   <li><b>Fast-lane builds show 4 dots</b> (Phases 1, 5, 6, 7); full lane shows 7. The waiting gate's dot is orange.</li>
   <li><b>Cleanup is copy-only.</b> Chief Stew never runs it.</li>
