@@ -27,8 +27,7 @@ public struct NoticeLedger: Codable, Equatable, Sendable {
     public init() {}
 }
 
-/// Board → notifications. Pure. Only needs-you items notify, never progress
-/// (plan § v1 features 3).
+/// Board → notifications. Pure. Only needs-you items notify, never progress.
 public enum NotificationPlanner {
     public struct Plan: Sendable, Equatable {
         public var post: [Notice] = []

@@ -60,10 +60,9 @@ extension SourceUpdate {
         FileManager.default.fileExists(atPath: (sourceDir as NSString).appendingPathComponent(".git"))
     }
 
-    /// Fetches tags (and origin's branches) into Chief Stew's own source clone: its only network
-    /// access. Never touches the checked-out branch or files. False when offline or without
-    /// access, which is fine: there's simply no update.
-    /// `path`: the login shell's PATH, so credential helpers installed with Homebrew etc. work.
+    /// Fetches tags and origin's branches into Chief Stew's own clone (its only network access);
+    /// never touches the checked-out branch or files. False when offline or without access.
+    /// `path`: the login shell's PATH, so Homebrew-installed credential helpers work.
     public static func fetch(sourceDir: String, path: String = "/usr/bin:/bin", git: String = "/usr/bin/git") async -> Bool {
         guard isClone(sourceDir),
             let r = try? await CommandRunner.run(

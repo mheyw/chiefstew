@@ -33,5 +33,5 @@ Chief Stew is a macOS 14+ menu-bar app, written only in Swift and built with Swi
 - The app never runs cleanup. It shows the commands and copies them.
 - There are no Live Activities, because on macOS they need an iPhone app, a server and a paid developer account.
 - **Distribution is source-based.** Each Mac builds its own copy (`./build.sh install`), so there's no Apple Developer account, no notarization and no Gatekeeper warnings. That suits a team of developers. A product for non-developers would switch to Developer ID signing, notarization and a download-based updater.
-- **Updates are releases.** `./release.sh X.Y.Z` tags `vX.Y.Z`. Installed copies fetch Chief Stew's own repo every few hours (its only network access; watched repos are never fetched), then build and install the newest release tag while you're not using the app. Updates are a progressive enhancement: a copy built from a zip, or without repo access, works fully and just doesn't update.
+- **Updates are releases.** `./release.sh X.Y.Z` tags `vX.Y.Z`. Installed copies fetch Chief Stew's own repo hourly (its only network access; watched repos are never fetched), then build and install the newest release tag while you're not using the app. Updates are a progressive enhancement: a copy built from a zip, or without repo access, works fully and just doesn't update.
 

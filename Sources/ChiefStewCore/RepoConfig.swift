@@ -3,7 +3,7 @@ import Foundation
 /// How Chief Stew reads a repo's build status (docs/event-contract.md § 4a).
 ///
 /// 0. `.chiefstew.json` (JSON5) with a `"workflow"`: a description the built-in engine turns
-///    into status. Nothing from the repo runs (docs/design/workflow-spec.md).
+///    into status. Nothing from the repo runs (docs/workflow.md).
 /// 1. `.chiefstew.json` with a `"status"` command (argv) that prints contract JSON, and
 ///    optionally a `"sweep"` command: the escape hatch for processes a description can't express.
 /// 2. No `.chiefstew.json`: Chief Stew shows the repo's agents only.

@@ -2,7 +2,7 @@ import Foundation
 
 /// The `"workflow"` section of `.chiefstew.json`: a description of where a repo's builds and
 /// their phases, gates and tasks are written down. The engine turns it into contract status
-/// (docs/design/workflow-spec.md). It's data: nothing in it is executed.
+/// (docs/workflow.md). It's data: nothing in it is executed.
 public struct WorkflowSpec: Sendable, Equatable {
     public enum Builds: Sendable, Equatable {
         /// Each git worktree other than the main one.

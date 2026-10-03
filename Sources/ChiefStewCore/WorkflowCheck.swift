@@ -5,7 +5,7 @@ import Foundation
 public enum WorkflowCheck {
     public struct Result: Sendable {
         public var ok: Bool
-        /// One line for the wizard: "3 builds · phases ✓ · gates ✓ · tasks —".
+        /// One line for the wizard: "3 builds · phases ✓ · gates 2/3 · tasks –".
         public var summary: String
         /// The full report for `chiefstew check`.
         public var text: String

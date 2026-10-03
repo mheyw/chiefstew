@@ -4,7 +4,7 @@ import AppKit
 import SwiftUI
 import Testing
 
-// Offscreen renders of every state (the plan's "UI snapshot" tests). They assert the views
+// Offscreen renders of every state. They assert the views
 // render at the panel width and write PNGs to $CHIEFSTEW_SNAPSHOTS (default: a temp folder) for
 // eyeballing against docs/mockup/states.png.
 

@@ -99,8 +99,7 @@ final class AppModel {
 
     /// `waiting/<session>` exists while that session needs input, so the PostToolUse
     /// hook can skip all work unless something is waiting (contract § 1). `chiefstew hook`
-    /// writes and removes it as it fires; this keeps it in step for other emitters. Session IDs
-    /// are reduced to safe filename characters.
+    /// writes and removes it as it fires; this keeps it in step for other emitters.
     private func writeWaitingMarkers() {
         let fm = FileManager.default
         let dir = paths.waiting
@@ -249,7 +248,7 @@ final class AppModel {
     }
 
     /// Updates are a progressive enhancement: only a copy built from a git clone of the repo
-    /// can update itself. Nil when this copy can't (a dev run, or built from a downloaded zip).
+    /// can update itself. False when this copy can't (a dev run, or built from a downloaded zip).
     var updatesPossible: Bool { source.map { SourceUpdate.isClone($0.dir) } ?? false }
 
     /// One line for Settings → Updates.
@@ -385,8 +384,6 @@ final class AppModel {
                 body: summary.isEmpty ? "You're on v\(installedVersion)." : summary, open: nil, isReminder: false))
     }
 
-    /// Runs `build.sh install` from the source folder, detached: it quits this copy, swaps in
-    /// the new one and reopens it. If the build fails, this copy is still running and says so.
     @ObservationIgnored private var installStarted: Date?
 
     /// A build that never finishes (or a quit that never came) shouldn't leave "Building…"
@@ -398,6 +395,8 @@ final class AppModel {
         update = .failed(log: Self.updateLog)
     }
 
+    /// Runs `build.sh update <ref>` from the source folder, detached: it quits this copy, swaps in
+    /// the new one and reopens it. If the build fails, this copy keeps running and says so.
     func installUpdate() {
         guard let source, update != .installing else { return }
         let fm = FileManager.default
@@ -437,7 +436,7 @@ final class AppModel {
             update = .installing
             installStarted = Date()
             notifier.withdraw([Self.updateNoticeID])
-            log.info("update: build.sh install started (pid \(process.processIdentifier))")
+            log.info("update: build.sh update started (pid \(process.processIdentifier))")
         } catch {
             update = .failed(log: Self.updateLog)
         }

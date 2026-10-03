@@ -66,7 +66,7 @@ public enum SetupPrompt {
 
             # The workflow format
 
-            \(workflowDoc ?? "See docs/design/workflow-spec.md in the Chief Stew repo.")
+            \(workflowDoc ?? "See docs/workflow.md in the Chief Stew repo.")
 
             ---
 

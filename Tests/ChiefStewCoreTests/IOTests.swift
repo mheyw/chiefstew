@@ -88,8 +88,7 @@ import Testing
     #expect(LoginEnvironment.majorVersion("") == nil)
 }
 
-/// A fake repo whose "node" is a shell script that prints a fixture or fails, like the plan's
-/// "fake status command" integration test.
+/// A fake repo whose "node" is a shell script that prints a fixture or fails.
 func fakeRepo(stdout: String, exit: Int = 0) throws -> (repo: String, client: StatusClient) {
     let dir = try tempDir()
     try FileManager.default.createDirectory(

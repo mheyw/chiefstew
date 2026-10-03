@@ -42,7 +42,7 @@ enum WorktreeApps {
 }
 
 /// Launch at login through SMAppService (macOS 13+). Registers the running bundle's path, so
-/// turn it on from the installed copy in /Applications (M3), not from build/.
+/// turn it on from the installed copy in /Applications, not from build/.
 enum LaunchAtLogin {
     static var isOn: Bool { SMAppService.mainApp.status == .enabled }
 
