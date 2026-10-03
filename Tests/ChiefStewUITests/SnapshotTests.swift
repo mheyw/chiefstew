@@ -95,7 +95,29 @@ let states: [(String, Board)] = [
                 message: "node scripts/status.mjs: printed text, not JSON",
                 since: ago(1), hint: StatusError.noJSONSupport("").hint))
     ),
+    // Appended, not inserted: updateLineRenders uses states[0].
+    ("6-no-repos", Board.make(repos: [], agents: [], now: now)),
+    ("7-first-poll", Board.make(repos: [RepoSnapshot(path: repo)], agents: [], now: now)),
+    (
+        "8-failing-no-data",
+        Board.make(
+            repos: [RepoSnapshot(path: repo, statusError: RepoError(message: "status timed out after 20 s", since: ago(3)))],
+            agents: [], now: now)
+    ),
+    (
+        "9-parked",
+        snapshot(builds: [
+            b173, BuildRow(num: "171", slug: "old_idea", state: "Parked 2026-09-29", lastCommitAt: ago(1440)),
+        ])
+    ),
+    ("10-sweep-failed", sweepFailed()),
 ]
+
+func sweepFailed() -> Board {
+    var snap = RepoSnapshot(path: repo, status: StatusReport(builds: [b173]), statusAt: ago(0.2))
+    snap.sweepError = RepoError(message: "sweep timed out after 20 s", since: ago(4))
+    return Board.make(repos: [snap], agents: [], now: now)
+}
 
 let outDir: URL = {
     let path = ProcessInfo.processInfo.environment["CHIEFSTEW_SNAPSHOTS"]
@@ -143,8 +165,13 @@ let outDir: URL = {
 
 @Test func menuTitlesPerState() {
     let titles = states.map { $0.1.menu.title }
-    #expect(titles == [nil, "173 Implement 6/11 +1", "3 need you", "173 Implement 6/11", "173 Implement 6/11"])
-    #expect(states.map { $0.1.menu.warning } == [false, false, false, true, true])
+    #expect(
+        titles == [
+            nil, "173 Implement 6/11 +1", "3 need you", "173 Implement 6/11", "173 Implement 6/11",
+            nil, nil, nil, "173 Implement 6/11", "173 Implement 6/11",
+        ])
+    #expect(
+        states.map { $0.1.menu.warning } == [false, false, false, true, true, false, false, true, false, false])
 }
 
 @Test func approveCommandIsSelfContained() {
@@ -162,6 +189,14 @@ let outDir: URL = {
         #expect(image.size.width == PanelView.width)
         try write(image, "panel-update-\(name)")
     }
+}
+
+/// Retry and Refresh show that they're working, so a repeat of the same error doesn't look ignored.
+@Test @MainActor func refreshingRenders() throws {
+    let board = try #require(states.first { $0.0 == "5-stale" }?.1)
+    let image = try #require(render(PanelView(board: board, now: now, refreshing: true)))
+    #expect(image.size.width == PanelView.width)
+    try write(image, "panel-refreshing")
 }
 
 /// Every menu-bar icon state, enlarged, for checking by eye: idle, in progress, needs you, and
