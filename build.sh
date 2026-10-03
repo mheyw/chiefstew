@@ -74,7 +74,9 @@ quit_running() {
 }
 
 reopen() {
-  open "$DEST"
+  # Straight after the old copy quits, LaunchServices can still think it's running and fail the
+  # launch with procNotFound (-600), so retry for a few seconds.
+  for _ in $(seq 1 5); do open "$DEST" && break; sleep 1; done
   for _ in $(seq 1 50); do running && break; sleep 0.1; done
   running || { echo "✗ it didn't start"; return 1; }
 }
@@ -108,7 +110,7 @@ install_bundle() {
     echo "✗ install failed; putting the previous copy back"
     if [ -d "$old" ]; then rm -rf "$DEST"; mv "$old" "$DEST"; fi
     open "$DEST" 2>/dev/null || true
-    osascript -e 'display notification "The update failed, so the previous copy was put back. See ~/Library/Logs/Chief Stew/update.log." with title "Chief Stew"' 2>/dev/null || true
+    osascript -e 'display notification "The update failed, so the previous copy was put back. The logs are in ~/Library/Logs/Chief Stew." with title "Chief Stew"' 2>/dev/null || true
   }
   trap restore ERR
   if [ -d "$DEST" ]; then mv "$DEST" "$old"; fi

@@ -423,6 +423,10 @@ final class AppModel {
         let fm = FileManager.default
         let logURL = URL(fileURLWithPath: Self.updateLog)
         try? fm.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Keep the last attempt: a copy put back after a failed install retries straight away.
+        let previous = logURL.deletingLastPathComponent().appendingPathComponent("update.previous.log")
+        try? fm.removeItem(at: previous)
+        try? fm.moveItem(at: logURL, to: previous)
         fm.createFile(atPath: logURL.path, contents: Data("\(Date()) installing from \(source.dir)\n".utf8))
         guard let logHandle = try? FileHandle(forWritingTo: logURL) else { return }
         logHandle.seekToEndOfFile()
