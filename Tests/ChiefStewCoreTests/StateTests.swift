@@ -244,6 +244,7 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     #expect(b.inProgress.allSatisfy { $0.staleSince == now })
     #expect(b.header.hasSuffix("1 repo stale"))
     #expect(b.menu.warning)
+    #expect(b.inProgress.allSatisfy { $0.tag == "stale" })
 }
 
 // MARK: - Portable contract bits

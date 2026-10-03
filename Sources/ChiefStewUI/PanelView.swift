@@ -393,12 +393,9 @@ struct BuildRowView: View {
             Line1(
                 dot: card.staleSince == nil && (!card.parked || card.agentWorking) ? Palette.running : Palette.dot,
                 name: Text("\(card.num) ").monospacedDigit() + Text(card.slug),
-                tag: card.parked ? (card.agentWorking ? "parked · agent active" : "parked") : nil,
-                help: "\(card.num) \(card.slug)"
+                tag: card.tag, help: "\(card.num) \(card.slug)"
             ) {
-                if card.parked {
-                    Text(card.agentWorking ? "parked · agent active" : "parked")
-                } else if let started = card.startedAt {
+                if let started = card.startedAt {
                     Text(Durations.short(now.timeIntervalSince(started)))
                 }
             }
@@ -437,7 +434,6 @@ struct BuildRowView: View {
                 }
             }
         }
-        .opacity(card.staleSince != nil ? 0.55 : card.parked && !card.agentWorking ? 0.7 : 1)
     }
 
     private var line2: String {
@@ -490,8 +486,8 @@ struct Line1<Trailing: View>: View {
                 Text(tag)
                     .font(.system(size: 10.5, weight: .medium))
                     .padding(.horizontal, 5)
-                    .background(RoundedRectangle(cornerRadius: 3).fill(Color.accentColor.opacity(0.12)))
-                    .foregroundStyle(Color.accentColor)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(Color.primary.opacity(0.06)))
+                    .foregroundStyle(Color.primary.opacity(0.75))
             }
             Spacer(minLength: 8)
             // The name truncates before what's on the right, which carries the row's state.

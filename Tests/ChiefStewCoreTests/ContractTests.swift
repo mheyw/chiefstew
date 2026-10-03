@@ -129,6 +129,7 @@ func rejectsMalformedEvents(json: String, expected: EventError) {
         repos: [RepoSnapshot(path: "/Users/you/my-app", status: StatusReport(builds: [row]))], agents: [],
         now: iso("2026-09-30T18:13:00Z"))
     #expect(board.inProgress.first?.parked == true)
+    #expect(board.inProgress.first?.tag == "parked")
     #expect(board.menu == MenuBarState(title: nil, attention: false, warning: false))
     #expect(board.header == "1 parked")
 }
@@ -145,6 +146,7 @@ func rejectsMalformedEvents(json: String, expected: EventError) {
     let working = Board.make(repos: repos, agents: [agent("agent.active", "2026-10-03T10:28:00Z")], now: now)
     #expect(working.inProgress.first?.parked == true)  // the file still says parked
     #expect(working.inProgress.first?.agentWorking == true)
+    #expect(working.inProgress.first?.tag == "parked · agent active")
     #expect(working.menu.title == nil)
     // A finished turn, or one long ago, isn't work in progress.
     let idle = Board.make(repos: repos, agents: [agent("agent.stopped", "2026-10-03T10:28:00Z")], now: now)

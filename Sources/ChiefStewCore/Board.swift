@@ -72,6 +72,11 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// An agent session in this build's checkout is mid-turn right now. On a parked build it
     /// means the build was picked up again before its Current state line said so.
     public var agentWorking: Bool = false
+
+    /// The row's one status label, next to its name.
+    public var tag: String? {
+        staleSince != nil ? "stale" : parked ? (agentWorking ? "parked · agent active" : "parked") : nil
+    }
 }
 
 public struct NeedsItem: Sendable, Equatable, Identifiable {
