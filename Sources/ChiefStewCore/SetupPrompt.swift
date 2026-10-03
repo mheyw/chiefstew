@@ -28,7 +28,7 @@ public enum SetupPrompt {
 
             Steps:
 
-            1. **Study how the repo tracks work in flight.** Look at its branches and git worktrees (`git branch`, `git worktree list`), and at plan, progress or status files, task checklists, docs folders, agent instructions (CLAUDE.md, AGENTS.md) and CI config. Decide what one "build" is here: a feature branch, a worktree, or a folder per piece of work. For each build, find where the repo writes down its current state, its phases or steps, any sign-off point (a gate: review, approval, QA) and its tasks.
+            1. **Study how the repo tracks work in flight.** Look at its branches and git worktrees (`git branch`, `git worktree list`), and at plan, progress or status files, task checklists, docs folders, agent instructions (CLAUDE.md, AGENTS.md) and CI config. Decide what one "build" is here: a feature branch, a worktree, or a folder per piece of work. For each build, find where the repo writes down its current state, its phases or steps, any sign-off point (a gate: review, approval, QA) and its tasks. **Check that the state line really moves:** read its history (`git log -p` on the file). If it's only rewritten at phase boundaries, so it says "step 1" or names a step long finished while work goes on, it will mislead whoever reads it. Tell the owner, and offer a light way to record the current step when a long one starts (a review, a full test run, a migration), with the time it started: a line in the agent instructions, or a small command if the repo already has scripts that write the state. Change nothing without the owner's yes.
 
             2. **If the repo already records these, describe what's there** (step 3). Don't change its files.
 
@@ -40,7 +40,7 @@ public enum SetupPrompt {
 
                If they choose b or c:
                - Add a small template (e.g. `docs/templates/STATUS.md`), and fill one in for each build already in flight, from what you can see on its branch.
-               - So it stays accurate, add a short section to the repo's agent instructions (`AGENTS.md` or `CLAUDE.md`; create `AGENTS.md` if there's neither). Tell agents to create the file when starting a build, update the state line as work moves, set the sign-off line to waiting when they need the owner, and tick tasks as they finish them. Keep it to a few lines, in the repo's own voice.
+               - So it stays accurate, add a short section to the repo's agent instructions (`AGENTS.md` or `CLAUDE.md`; create `AGENTS.md` if there's neither). Tell agents to create the file when starting a build, replace the state line when a long step starts (a review, a full test run, a migration) with the time it started, set the sign-off line to waiting when they need the owner, and tick tasks as they finish them. Start the state line as the phase name alone, never "step 1". Keep it to a few lines, in the repo's own voice.
                - Leave everything uncommitted for review.
 
             3. **Write `.chiefstew.json`** at the repo root, as JSON5 (comments welcome). Put a `"workflow"` in it, as described in "The workflow format" below. Describe only what the repo really records, including any structure you added in step 2. Leave out anything the defaults already handle well. If the repo keeps its plan in a file (builds with IDs and statuses: a roadmap or backlog), also describe it in a top-level `"roadmap"` (see "Roadmap" in the format below).
@@ -55,6 +55,7 @@ public enum SetupPrompt {
             - Phases, gates and tasks are usually markdown: checkbox lines (`- [x] Design`) or lines like `Review: waiting`. Use `"list": "checkboxes"` for the first and a regular expression with named groups for the second. Group names: `n`, `name`, `done`, `started`, `doneAt` for phases; `gate`, `status`, `at` for gates.
             - `artefact` is the file a reviewer opens at a gate. `approve` is the exact command that signs a gate off, if the repo has one. Chief Stew copies it and never runs it.
             - `parked` (set aside) and `closed` (finished, waiting to merge) are regular expressions on the state line.
+            - If the tasks belong to one phase (a plan's tasks are built in an "implement" or "execute" phase), give `tasks` that phase's number as `phase`, so the count isn't shown for the rest of the build.
 
             What not to add (Chief Stew already covers it, and a second source makes it double up):
             - **No Claude Code hooks and no `agent.*` events.** Chief Stew's own hooks, installed once for every repo, already say when an agent needs the owner, ends a turn or gets an answer.

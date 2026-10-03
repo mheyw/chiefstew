@@ -102,7 +102,7 @@ Every field below says where to read:
 | `closed` | `state`: a regex on the state line | finished but not merged: needs you |
 | `phases` | `list`: `"checkboxes"` (each `- [ ]`/`- [x]` line is a phase), or a regex applied per line with groups `n`, `name`, `done` (`x` or `true` means done), `started`, `doneAt`. Optional `skip: { "lane": "fast", "phases": [2, 3] }`. | the phase dots. The first unfinished phase is active, or the one with a `started` time if your regex captures `started`. |
 | `gates` | `list`: a regex per line with groups `gate`, `status` (words like waiting/open/pending, or approved/passed/done), `at`; or `"checkboxes"` (unticked means waiting). Optional `phase` (gate → phase number), `artefact` (one path template, or gate → path), and `approve` (a command template using `{gate}`, `{num}`, `{slug}`). | gates. A waiting gate **needs you**, with the artefact to open (a read-only copy from git when the build isn't checked out) and the approve command to copy (Chief Stew never runs it). |
-| `tasks` | `count: "checkboxes"` | done / total, shown once at least one is done |
+| `tasks` | `count: "checkboxes"`, with an optional `phase`: the phase number the tasks belong to (or a list) | done / total, shown once at least one is done. With `phase`, shown only while that phase is active, so a finished plan's count doesn't follow the build into review |
 
 Unknown keys are reported by `chiefstew check`, so a typo never silently does nothing.
 

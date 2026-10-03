@@ -445,7 +445,22 @@ public struct WorkflowEngine: Sendable {
             if let text {
                 let boxes = Self.checkboxes(text)
                 row.tasks = boxes.isEmpty ? nil : TaskCount(done: boxes.filter(\.done).count, total: boxes.count)
-                note("tasks", !boxes.isEmpty, boxes.isEmpty ? "\(file ?? "") has no checkboxes" : "\(file ?? "") → \(row.tasks!.done)/\(row.tasks!.total)")
+                var detail = boxes.isEmpty ? "\(file ?? "") has no checkboxes" : "\(file ?? "") → \(row.tasks!.done)/\(row.tasks!.total)"
+                // Tasks that belong to a phase are reported only while it's the active one, so a
+                // finished plan's count doesn't follow the build into review.
+                if let only = spec.tasksPhases, row.tasks != nil {
+                    let which = only.map(String.init).joined(separator: " or ")
+                    if let phases = row.phases {
+                        let active = phases.first { $0.status == "active" }?.n
+                        if active.map(only.contains) != true {
+                            row.tasks = nil
+                            detail += ", shown only in phase \(which) (now \(active.map { "in phase \($0)" } ?? "no phase is active"))"
+                        }
+                    } else {
+                        detail += "; phase \(which) can't be told without phases, so it's always shown"
+                    }
+                }
+                note("tasks", !boxes.isEmpty, detail)
             } else {
                 note("tasks", false, why ?? "not found")
             }

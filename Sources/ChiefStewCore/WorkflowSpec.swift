@@ -66,12 +66,14 @@ public struct WorkflowSpec: Sendable, Equatable {
     public var skip: (lane: String, phases: [Int])?
     public var gates: GateRule?
     public var tasks: Locator?
+    /// The phases the tasks belong to: they're reported only while one of them is active.
+    public var tasksPhases: [Int]?
 
     public static func == (a: WorkflowSpec, b: WorkflowSpec) -> Bool {
         a.builds == b.builds && a.includeRemote == b.includeRemote && a.folder == b.folder && a.state == b.state && a.lane == b.lane
             && a.parked == b.parked && a.closed == b.closed && a.phases == b.phases
             && a.skip?.lane == b.skip?.lane && a.skip?.phases == b.skip?.phases && a.gates == b.gates
-            && a.tasks == b.tasks
+            && a.tasks == b.tasks && a.tasksPhases == b.tasksPhases
     }
 
     /// One problem in the description, with where it is (`workflow.phases.list`).
@@ -127,7 +129,7 @@ public struct WorkflowSpec: Sendable, Equatable {
             "parked": ["state"], "closed": ["state"],
             "phases": ["file", "section", "list", "skip"],
             "gates": ["file", "section", "list", "phase", "artefact", "approve"],
-            "tasks": ["file", "section", "count"],
+            "tasks": ["file", "section", "count", "phase"],
         ]
         func object(_ key: String) -> [String: Any]? {
             guard let v = w[key] else { return nil }
@@ -223,6 +225,11 @@ public struct WorkflowSpec: Sendable, Equatable {
         if let o = object("tasks") {
             if o["count"] as? String != "checkboxes" { fail("workflow.tasks.count", "use \"checkboxes\"") }
             spec.tasks = locator(o, "workflow.tasks")
+            if let p = o["phase"] {
+                if let n = p as? Int, n > 0 { spec.tasksPhases = [n] }
+                else if let list = p as? [Int], !list.isEmpty, list.allSatisfy({ $0 > 0 }) { spec.tasksPhases = list }
+                else { fail("workflow.tasks.phase", "a phase number, or a list of them") }
+            }
         }
         return problems.isEmpty ? .success(spec) : .failure(Problems(list: problems))
     }

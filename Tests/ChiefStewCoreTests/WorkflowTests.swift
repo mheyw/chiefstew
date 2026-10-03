@@ -455,3 +455,47 @@ private func commit(_ dir: URL, as name: String, _ email: String, _ message: Str
     #expect(WorkflowEngine.branchURL(origin: "git@gitlab.com:acme/app.git", branch: "x") == nil)
     #expect(WorkflowEngine.branchURL(origin: "/srv/git/app.git", branch: "x") == nil)
 }
+
+// MARK: - Tasks that belong to a phase
+
+/// A plan's tasks are built in one phase; once the build moves on (into review, say), its finished
+/// count shouldn't follow it there.
+@Test func tasksWithAPhaseShowOnlyWhileItIsActive() throws {
+    let (repo, _) = try sampleRepo()
+    func spec(_ phase: Any?) throws -> WorkflowSpec {
+        var tasks: [String: Any] = ["file": "PLAN.md", "section": "Tasks", "count": "checkboxes"]
+        tasks["phase"] = phase
+        return try WorkflowSpec.parse([
+            "builds": ["from": "branches", "branch": "feature/{slug}", "folder": "docs/features/{slug}"],
+            "phases": ["file": "PLAN.md", "section": "Phases", "list": "checkboxes"],
+            "tasks": tasks,
+        ] as [String: Any]).get()
+    }
+    // feature/a: Design done, Build active (phase 2), 2 of 3 tasks ticked.
+    func run(_ phase: Any?) throws -> (TaskCount?, String) {
+        let r = WorkflowEngine(repo: repo.path, spec: try spec(phase)).runExplained()
+        let a = try #require(r.report.builds.first { $0.slug == "a" })
+        let note = r.diagnostics.first { $0.slug == "a" }?.notes.first { $0.field == "tasks" }?.detail ?? ""
+        return (a.tasks, note)
+    }
+    #expect(try run(nil).0 == TaskCount(done: 2, total: 3))
+    #expect(try run(2).0 == TaskCount(done: 2, total: 3))
+    #expect(try run([1, 2]).0 == TaskCount(done: 2, total: 3))
+    let (hidden, note) = try run(3)
+    #expect(hidden == nil)
+    #expect(note.hasSuffix("2/3, shown only in phase 3 (now in phase 2)"))
+
+    guard case .failure(let p) = WorkflowSpec.parse([
+        "builds": ["from": "worktrees"], "tasks": ["file": "PLAN.md", "count": "checkboxes", "phase": "review"],
+    ] as [String: Any]) else { Issue.record("expected a problem"); return }
+    #expect(p.list.map(\.path) == ["workflow.tasks.phase"])
+}
+
+@Test func theSetupPromptAsksForAStateLineThatMoves() {
+    let prompt = SetupPrompt.make(
+        repo: "/Users/you/my-app", config: RepoConfig(status: nil, sweep: nil, source: .none), problem: nil,
+        contract: nil, workflowDoc: nil, cli: "chiefstew")
+    #expect(prompt.contains("Check that the state line really moves"))
+    #expect(prompt.contains("never \"step 1\""))
+    #expect(prompt.contains("give `tasks` that phase's number as `phase`"))
+}
