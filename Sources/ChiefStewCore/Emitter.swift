@@ -15,6 +15,7 @@ public enum Emitter {
         }
         var event = fields
         event["v"] = 1
+        if event["id"] == nil { event["id"] = UUID().uuidString.lowercased() }
         if event["ts"] == nil {
             let f = ISO8601DateFormatter()
             f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

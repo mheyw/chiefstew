@@ -29,7 +29,8 @@ A repo can do any subset:
 | `~/Library/Application Support/Chief Stew/` | Chief Stew | The home folder. `$CHIEFSTEW_HOME` overrides it (for tests and dev runs); emitters must honour the same variable. |
 | `…/inbox/` | Chief Stew creates it on first launch | If it **exists**, Chief Stew is **installed**. Emitters never create it. |
 | `…/alive` | Chief Stew touches it every 60 s while running **and allowed to post notifications**. It deletes the file on quit, or when permission is off. | If its mtime is **under 180 s old**, Chief Stew is **running** and will notify. |
-| `…/waiting/<session>` | Chief Stew: one empty file per agent session that needs input, removed when it's answered | Lets a hook that runs on every tool call skip all work unless something is waiting (`agent.active`, §3.2). The name is the session ID reduced to `[A-Za-z0-9_-]`, at most 128 characters (`session` if nothing is left). |
+| `…/waiting/<session>` | `chiefstew hook` writes it when a session asks for input and removes it on the session's next sign of life; Chief Stew keeps it in step for other emitters. One empty file per agent session that needs input | Lets a hook that runs on every tool call skip all work unless something is waiting (`agent.active`, §3.2). The name is the session ID reduced to `[A-Za-z0-9_-]`, at most 128 characters (`session` if nothing is left). |
+| `…/events.jsonl`, `…/events.1.jsonl` | Chief Stew | The journal: every event handled, one §3.1 JSON object per line. Replayed at launch to rebuild agent state; read it when state looks wrong. Rotated at 4 MB. |
 | `/Applications/Chief Stew.app/Contents/Helpers/chiefstew` | Chief Stew | The bundled command: `chiefstew hook …` for Claude Code hooks and `chiefstew emit …` for repo scripts (§2.1). |
 
 ## 2. Emitter rules
@@ -58,6 +59,7 @@ Flags: `--build`, `--gate`, `--phase`, `--slug`, `--lane`, `--message`, `--sessi
 ```json
 {
   "v": 1,
+  "id": "3f6c1e0a-…",
   "ts": "2026-09-30T14:02:11.123Z",
   "kind": "gate.waiting",
   "repo": "/Users/you/my-app",
@@ -75,6 +77,7 @@ Flags: `--build`, `--gate`, `--phase`, `--slug`, `--lane`, `--message`, `--sessi
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `v` | int | yes | `1`. Any other value is skipped and logged. |
+| `id` | string | no (recommended) | Unique per event, e.g. a UUID; at most 64 characters. A copy with an `id` already handled is ignored. `chiefstew emit` and `chiefstew hook` set one. |
 | `ts` | string | yes | ISO 8601 with a zone. If it can't be parsed, the file's mtime is used instead. |
 | `kind` | string | yes | See §3.2. Unknown kinds are ignored, so the contract can grow. |
 | `repo` | string | yes | Absolute path of the repo's **main** working tree (the parent of `git rev-parse --path-format=absolute --git-common-dir`). Must match a repo registered in Chief Stew. |
@@ -86,7 +89,7 @@ Flags: `--build`, `--gate`, `--phase`, `--slug`, `--lane`, `--message`, `--sessi
 | `gate` | string | per kind | The repo's own gate name: lowercase `[a-z0-9_-]`, 1–32 characters. |
 | `session` | string | per kind | The agent's session ID (Claude Code's `session_id`). |
 | `agent` | string | no | `claude-code`, `codex`, … Shown as "Claude", "Codex", or the name capitalised. |
-| `notification_type` | string | no | Passed through from Claude Code's Notification hook when present. |
+| `notification_type` | string | no | Passed through from Claude Code's Notification hook when present (`permission_prompt`, `elicitation_dialog`, `idle_prompt`, …). Chief Stew uses it to tell a question from a reminder (§3.3). |
 | `host_app`, `host_pid`, `tty` | string, int, string | no | The app running the agent's session (e.g. `com.mitchellh.ghostty`), its process ID and the terminal device. `chiefstew hook` records them by walking up from the hook's process; **Go to session** uses them to bring that app forward. |
 | `message` | string | no | At most 200 characters. |
 
@@ -98,25 +101,26 @@ Unknown fields are ignored.
 |---|---|---|---|
 | `phase.started` | `build`, `phase` | The repo's scripts | Refresh status |
 | `phase.done` | `build`, `phase` | The repo's scripts | Refresh status |
-| `gate.waiting` | `build`, `gate` | The repo's scripts | Refresh status. For a repo that isn't registered, or whose status is failing, it notifies straight from the event. |
+| `gate.waiting` | `build`, `gate` | The repo's scripts | Refresh status. For a repo whose status can't show the gate (not registered, not read yet, or failing), the gate is shown and notified from events until `gate.approved` or `build.closed`. |
 | `gate.approved` | `build`, `gate` | The repo's scripts | Refresh; stops reminders for that gate |
 | `build.closed` | `build` | The repo's scripts | Refresh |
-| `agent.needs_input` | `session` | Claude Code **Notification** hook | **Needs you** (§3.3) and notify |
+| `agent.needs_input` | `session` | Claude Code **Notification** hook | **Needs you** (§3.3) and notify, unless it's an idle reminder or an auth notice |
 | `agent.stopped` | `session` | Claude Code **Stop** hook | Records last activity; refresh; clears needs-input |
 | `agent.resumed` | `session` | Claude Code **UserPromptSubmit** hook | Clears needs-input |
-| `agent.active` | `session` | Claude Code **PostToolUse** hook, **only while `waiting/<session>` exists** | Clears needs-input: a tool ran, so a permission prompt was answered |
+| `agent.active` | `session` | Claude Code **PostToolUse** hook, **only while `waiting/<session>` exists** (the hook then removes it) | Clears needs-input: a tool ran, so a permission prompt was answered |
 | `agent.ended` | `session` | Claude Code **SessionEnd** hook | Forgets the session, so a closed tab no longer "needs you" |
 
 A session's `repo` is the project it was started in (Claude Code's `CLAUDE_PROJECT_DIR`), not wherever it last changed directory to.
 
-Chief Stew installs the five Claude Code hooks itself, into `~/.claude/settings.json`, so they cover every repo. A repo doesn't need to add them. Each hook runs `chiefstew hook notify|stop|prompt|active|end`, prints nothing, always exits 0, and does nothing if Chief Stew is gone. A repo that also emits agent events from its own hooks is fine: a second copy of the same event from the same session within 3 s is ignored.
+Chief Stew installs the five Claude Code hooks itself, into `~/.claude/settings.json`, so they cover every repo. A repo doesn't need to add them. Each hook runs `chiefstew hook notify|stop|prompt|active|end`, prints nothing, always exits 0, and does nothing if Chief Stew is gone. **One producer per fact:** a repo shouldn't send agent events from its own hooks. (If it does, a second copy of the same kind from the same session within 3 s is ignored, but that's a safety net, not a design.) Events state facts; deciding what to show and notify is Chief Stew's alone, so emitters never post notifications while Chief Stew is running (§1, `alive`).
 
 ### 3.3 Agent state (the one thing events own)
 
 Status knows nothing about agent sessions, so Chief Stew keeps a small per-`session` record built from events alone:
 
 - `agent.needs_input` sets **needs input**, with its `message`.
-- Any later event from the same session (by `ts`), other than another `agent.needs_input`, clears it. Claude Code's idle prompt fires *after* Stop, so its later timestamp keeps it set.
+- Any later event from the same session (by `ts`), other than another `agent.needs_input`, clears it.
+- Not every Notification is a question. With `notification_type` `idle_prompt` (Claude Code's reminder 60 s after a turn ends) or `auth_success`, or with no type and the message `Claude is waiting for your input`, the event changes nothing: the Stop before it already showed the session as idle.
 - `agent.ended` removes the session.
 - A needs-input record older than 8 h expires, and a session with no events for 24 h is forgotten.
 - Agent state is saved to `…/agents.json`, so it survives a relaunch or an update.
@@ -127,7 +131,8 @@ Status knows nothing about agent sessions, so Chief Stew keeps a small per-`sess
 - It reads the inbox on start and on every change to the folder, sorted by `ts` then filename. It deletes each file once handled.
 - A malformed file (bad JSON, over 16 KB, missing required fields, wrong `v`, not a regular file) is logged with its first 200 bytes through `os_log` and deleted. It never causes a crash.
 - Events older than 24 h at read time are dropped.
-- Duplicates are harmless.
+- Duplicates are harmless: a copy with an `id` already handled is ignored.
+- Every event handled is appended to the journal (§1). At launch, Chief Stew replays the last 24 h of it to rebuild agent state and event-only gates.
 
 ## 4. Status
 

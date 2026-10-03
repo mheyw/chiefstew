@@ -4,11 +4,27 @@ import Testing
 
 // MARK: - Agent state (contract § 3.3)
 
-@Test func idlePromptAfterStopStaysSet() {
+@Test func idleReminderAfterStopIsNotAQuestion() {
     var t = AgentTracker()
     t.apply(event("agent.stopped", at: "2026-09-30T14:00:00Z"))
-    t.apply(event("agent.needs_input", at: "2026-09-30T14:01:00Z", message: "waiting"))
-    #expect(t.current(now: iso("2026-09-30T14:02:00Z")).first?.needsInput?.message == "waiting")
+    var reminder = event("agent.needs_input", at: "2026-09-30T14:01:00Z", message: "Claude is waiting for your input")
+    reminder.notificationType = "idle_prompt"
+    t.apply(reminder)
+    reminder.notificationType = nil  // older Claude Code: recognised by its text
+    t.apply(reminder)
+    let s = try! #require(t.current(now: iso("2026-09-30T14:02:00Z")).first)
+    #expect(s.needsInput == nil)
+    #expect(s.isIdle)
+}
+
+@Test func permissionPromptsAndQuestionsAreNeedsInput() {
+    for type in ["permission_prompt", "elicitation_dialog", nil] as [String?] {
+        var t = AgentTracker()
+        var e = event("agent.needs_input", at: "2026-09-30T14:00:00Z", message: "Claude needs your permission to use Bash")
+        e.notificationType = type
+        t.apply(e)
+        #expect(t.current(now: iso("2026-09-30T14:01:00Z")).first?.needsInput != nil)
+    }
 }
 
 @Test func answeredPermissionPromptIsClearedByStop() {

@@ -135,13 +135,21 @@ private func gateBoard(since: Date = t0, at now: Date = t0) -> Board {
     #expect(plan.withdraw == ["agent-s@1790000000"])
 }
 
-@Test func eventNoticesForUnregisteredRepos() {
-    let gate = Event(
-        ts: t0, kind: "gate.waiting", repo: "/Users/me/other", build: "012", slug: "thing",
-        gate: "plan")
-    #expect(NotificationPlanner.notice(forEvent: gate)?.title == "012 needs you")
-    #expect(NotificationPlanner.notice(forEvent: gate)?.body == "Plan gate — thing")
-    #expect(NotificationPlanner.notice(forEvent: gate)?.open == nil)
-    let stopped = Event(ts: t0, kind: "agent.stopped", repo: "/x", session: "s")
-    #expect(NotificationPlanner.notice(forEvent: stopped) == nil)
+@Test func gatesFromEventsNotifyForUnregisteredReposAndWithdrawWhenApproved() {
+    var state = EventState()
+    state.apply(
+        Event(ts: t0, kind: "gate.waiting", repo: "/Users/me/other", build: "012", slug: "thing", gate: "plan"))
+    let board = Board.make(repos: [], agents: [], eventGates: state.gates.current(now: t0), now: t0)
+    let plan = NotificationPlanner.plan(
+        board: board, ledger: NoticeLedger(), settings: Preferences(), now: t0, loaded: [], registered: [])
+    let notice = try! #require(plan.post.first)
+    #expect(notice.title == "012 needs you")
+    #expect(notice.body == "Plan gate — thing")
+    #expect(notice.open == nil)
+
+    state.apply(Event(ts: t0 + 60, kind: "gate.approved", repo: "/Users/me/other", build: "012", gate: "plan"))
+    let after = Board.make(repos: [], agents: [], eventGates: state.gates.current(now: t0 + 60), now: t0 + 60)
+    let next = NotificationPlanner.plan(
+        board: after, ledger: plan.ledger, settings: Preferences(), now: t0 + 60, loaded: [], registered: [])
+    #expect(next.withdraw == [notice.id])
 }

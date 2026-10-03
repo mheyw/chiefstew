@@ -47,8 +47,11 @@ public enum NotificationPlanner {
     ///   board is only withdrawn when its repo is loaded; otherwise it may just not be read yet
     ///   (at launch, or while the repo's status is failing). Agent waits are withdrawn whenever
     ///   they're gone, since agent state is kept across launches.
+    /// - Parameter registered: the registered repos, when known. An item for any other repo can
+    ///   only have come from events, so it's withdrawn as soon as it's gone.
     public static func plan(
-        board: Board, ledger: NoticeLedger, settings: Preferences, now: Date, loaded: Set<String>
+        board: Board, ledger: NoticeLedger, settings: Preferences, now: Date, loaded: Set<String>,
+        registered: Set<String>? = nil
     ) -> Plan {
         var plan = Plan(ledger: ledger)
         var live = Set<String>()
@@ -70,7 +73,8 @@ public enum NotificationPlanner {
 
         for key in ledger.sent.keys where !live.contains(key) {
             let repo = key.components(separatedBy: "#").first ?? ""
-            guard key.hasPrefix("agent-") || loaded.contains(repo) else { continue }
+            let fromEvents = registered.map { !$0.contains(repo) } ?? false
+            guard key.hasPrefix("agent-") || loaded.contains(repo) || fromEvents else { continue }
             plan.withdraw.append(key)
             plan.ledger.sent[key] = nil
         }
@@ -108,32 +112,6 @@ public enum NotificationPlanner {
                 id: key, title: "\(num) isn't merged",
                 body: "Closed \(waited) ago — \(who). Merge it today.", open: item.worktree,
                 isReminder: reminder)
-        }
-    }
-}
-
-extension NotificationPlanner {
-    /// A notice straight from an event, for when the board can't show it: the event's repo
-    /// isn't registered, or its status is failing. Chief Stew's heartbeat has told the emitter
-    /// to stay quiet, so without this the owner would hear nothing (review: gate-notify-dropped).
-    public static func notice(forEvent e: Event) -> Notice? {
-        let repoName = URL(fileURLWithPath: e.repo).lastPathComponent
-        switch e.kind {
-        case "gate.waiting":
-            guard let build = e.build, let gate = e.gate else { return nil }
-            let title = gate.prefix(1).uppercased() + gate.dropFirst()
-            return Notice(
-                id: "event:\(e.repo)#\(build)#gate-\(gate)", title: "\(build) needs you",
-                body: "\(title) gate — \(e.slug ?? repoName)", open: nil, isReminder: false)
-        case "agent.needs_input":
-            guard let session = e.session else { return nil }
-            let name = AgentState.displayName(e.agent)
-            return Notice(
-                id: "agent-\(session)@\(Int(e.ts.timeIntervalSince1970))", title: "\(name) needs you",
-                body: "\(e.message ?? "\(name) is waiting for your input") — \(repoName)",
-                open: nil, isReminder: false)
-        default:
-            return nil
         }
     }
 }

@@ -192,7 +192,11 @@ public struct Board: Sendable, Equatable {
 
 extension Board {
     /// Status + sweep + agent state → what the panel and menu bar show. Pure.
-    public static func make(repos: [RepoSnapshot], agents: [AgentState], now: Date) -> Board {
+    /// - Parameter eventGates: gates known only from events; shown for a repo whose status
+    ///   can't show them (not registered, not read yet, or failing).
+    public static func make(
+        repos: [RepoSnapshot], agents: [AgentState], eventGates: [EventGates.Wait] = [], now: Date
+    ) -> Board {
         var board = Board()
         board.repoNames = repos.map(\.name)
         board.checkedAt = repos.compactMap(\.statusAt).min()
@@ -272,6 +276,21 @@ extension Board {
                     kind: .agent(message: n.message, name: agent.displayName), since: n.since,
                     card: nil, repoName: URL(fileURLWithPath: agent.path).lastPathComponent,
                     worktree: agent.path, session: agent.session))
+        }
+
+        for wait in eventGates {
+            let repo = repos.first { PathMatch.normalize($0.path) == wait.repo }
+            if let repo, repo.status != nil, repo.statusError == nil { continue }  // status shows it
+            let id = "\(wait.repo)#\(wait.build)#gate-\(wait.gate)"
+            guard !board.needsYou.contains(where: { $0.id == id }) else { continue }
+            let name = repo?.name ?? URL(fileURLWithPath: wait.repo).lastPathComponent
+            let card = BuildCard(
+                id: "\(wait.repo)#\(wait.build)", repoName: name, num: wait.build, slug: wait.slug ?? "",
+                dots: [], state: "", lastActivity: wait.since, flags: [])
+            board.needsYou.append(
+                NeedsItem(
+                    id: id, kind: .gate(GateInfo(gate: wait.gate, status: "waiting", at: wait.since)),
+                    since: wait.since, card: card, repoName: name, worktree: nil, repoPath: wait.repo))
         }
 
         board.needsYou.sort { ($0.since, $0.id) < ($1.since, $1.id) }

@@ -16,7 +16,9 @@ final class AppModel {
     static let panelFreshness: TimeInterval = 10
 
     private(set) var snapshots: [String: RepoSnapshot] = [:]
-    private(set) var tracker = AgentTracker()
+    /// Everything known from events. Agent state and event-only gates are folds over them.
+    private(set) var events = EventState()
+    var tracker: AgentTracker { events.agents }
     private(set) var repos: [String]
     /// Bumped by the poll loop so time-based state (needs-input expiry) re-evaluates.
     private(set) var tick = Date()
@@ -44,6 +46,7 @@ final class AppModel {
     @ObservationIgnored private let paths = Paths()
     @ObservationIgnored private let notifier = Notifier()
     @ObservationIgnored private var ledger: NoticeLedger
+    @ObservationIgnored private lazy var journal = EventJournal(paths: paths)
     @ObservationIgnored private var watcher: InboxWatcher?
     @ObservationIgnored private var inflight = Set<String>()
     @ObservationIgnored private var rerun = Set<String>()
@@ -63,14 +66,28 @@ final class AppModel {
         repos = RepoStore.load()
         settings = Self.load(Preferences.self, key: "settings") ?? Preferences()
         ledger = Self.load(NoticeLedger.self, key: "noticeLedger") ?? NoticeLedger()
-        // Agent waits survive a relaunch (and a one-click update): the events that set them
-        // were deleted from the inbox long ago (review: relaunch-drops-agent-waits).
-        if let data = try? Data(contentsOf: paths.agents),
-            let saved = try? JSONDecoder().decode(AgentTracker.self, from: data)
-        {
-            tracker = saved
-            tracker.prune(now: Date())
+        // State survives a relaunch (and a one-click update) by replaying the journal: the
+        // events were deleted from the inbox long ago (review: relaunch-drops-agent-waits).
+        // A copy from before the journal existed starts from its agents.json snapshot.
+        let replayed = EventJournal(paths: paths).replay()
+        if replayed.isEmpty {
+            if let data = try? Data(contentsOf: paths.agents),
+                let saved = try? JSONDecoder().decode(AgentTracker.self, from: data)
+            {
+                events = EventState(agents: saved)
+            }
+        } else {
+            for e in replayed { events.apply(Self.sanitized(e)) }
         }
+        events.prune(now: Date())
+    }
+
+    /// A worktree outside the event's repo is dropped: an event can't point Chief Stew at an
+    /// arbitrary path to open later (review: event-path-launches-apps).
+    static func sanitized(_ event: Event) -> Event {
+        var e = event
+        if let wt = e.worktree, !PathMatch.contains(e.repo, wt) { e.worktree = nil }
+        return e
     }
 
     private func saveAgents() {
@@ -81,8 +98,9 @@ final class AppModel {
     }
 
     /// `waiting/<session>` exists while that session needs input, so the PostToolUse
-    /// hook can skip starting Node for every tool call unless something is waiting
-    /// (contract § 1). Session IDs are reduced to safe filename characters.
+    /// hook can skip all work unless something is waiting (contract § 1). `chiefstew hook`
+    /// writes and removes it as it fires; this keeps it in step for other emitters. Session IDs
+    /// are reduced to safe filename characters.
     private func writeWaitingMarkers() {
         let fm = FileManager.default
         let dir = paths.waiting
@@ -90,7 +108,13 @@ final class AppModel {
         let want = Set(
             tracker.current(now: Date()).filter { $0.needsInput != nil }.map { Paths.markerName($0.session) })
         let have = Set((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
-        for name in have.subtracting(want) { try? fm.removeItem(at: dir.appendingPathComponent(name)) }
+        for name in have.subtracting(want) {
+            let url = dir.appendingPathComponent(name)
+            // A marker the notify hook has just written, for an event not read yet, stays.
+            let written = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            if let written, Date().timeIntervalSince(written) < 10 { continue }
+            try? fm.removeItem(at: url)
+        }
         for name in want.subtracting(have) {
             fm.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data())
         }
@@ -99,7 +123,7 @@ final class AppModel {
     func board(now: Date) -> Board {
         Board.make(
             repos: repos.map { snapshots[$0] ?? RepoSnapshot(path: $0) },
-            agents: tracker.current(now: now), now: now)
+            agents: tracker.current(now: now), eventGates: events.gates.current(now: now), now: now)
     }
 
     // MARK: lifecycle
@@ -144,7 +168,7 @@ final class AppModel {
                 while !Task.isCancelled {
                     guard let self else { return }
                     self.tick = Date()
-                    self.tracker.prune(now: self.tick)
+                    self.events.prune(now: self.tick)
                     self.watcher?.ensureRunning()
                     await self.notifier.refreshPermission()  // it can change in System Settings
                     self.heartbeat()
@@ -443,7 +467,8 @@ final class AppModel {
         let now = Date()
         let loaded = Set(repos.filter { snapshots[$0]?.statusAt != nil })
         let plan = NotificationPlanner.plan(
-            board: board(now: now), ledger: ledger, settings: settings, now: now, loaded: loaded)
+            board: board(now: now), ledger: ledger, settings: settings, now: now, loaded: loaded,
+            registered: Set(repos.map(PathMatch.normalize)))
         plan.post.forEach(notifier.post)
         notifier.withdraw(plan.withdraw)
         if plan.ledger != ledger {
@@ -660,23 +685,16 @@ final class AppModel {
         if !result.rejected.isEmpty || result.expired > 0 {
             log.info("inbox: \(result.rejected.count) rejected, \(result.expired) expired")
         }
-        for var event in result.events {
-            guard let repo = registered(event.repo) else {
-                // Chief Stew's heartbeat told the emitter to stay quiet, so say it here.
-                log.info("inbox: \(event.kind, privacy: .public) for unregistered \(event.repo, privacy: .public)")
-                postFromEvent(event)
-                continue
-            }
-            // A worktree outside the repo is ignored: an event can't point Chief Stew at an
-            // arbitrary path to open later (review: event-path-launches-apps).
-            if let wt = event.worktree, !PathMatch.contains(repo, wt) { event.worktree = nil }
-            tracker.apply(event)
-            if event.kind == "gate.waiting", snapshots[repo]?.statusError != nil {
-                postFromEvent(event)  // the board can't show it while status is failing
-            }
-            scheduleRefresh(repo)
+        // Every event goes into state, registered repo or not: the board decides what to show
+        // and the planner what to notify, so nothing posts straight from an event.
+        var applied: [Event] = []
+        for event in result.events.map(Self.sanitized) {
+            guard events.apply(event) else { continue }  // a copy of one already handled
+            applied.append(event)
+            if let repo = registered(event.repo) { scheduleRefresh(repo) }
         }
-        if !result.events.isEmpty {
+        journal.append(applied)
+        if !applied.isEmpty {
             saveAgents()
             updateNotifications()  // agent needs-input notifies straight away
             dumpDebugState()
@@ -710,13 +728,6 @@ final class AppModel {
         {
             try? png.write(to: url.appendingPathComponent("panel.png"))
         }
-    }
-
-    private func postFromEvent(_ event: Event) {
-        guard permission == .granted, let notice = NotificationPlanner.notice(forEvent: event)
-        else { return }
-        let enabled = event.kind == "gate.waiting" ? settings.notifyGates : settings.notifyAgents
-        if enabled { notifier.post(notice) }
     }
 
     private func registered(_ path: String) -> String? {

@@ -105,6 +105,19 @@ func hook(_ sub: String?) -> Never {
         if let t = input["notification_type"] as? String { event["notification_type"] = t }
     }
     Emitter.emit(event, paths: paths)
+    // The hook keeps the waiting marker itself, as it fires, so the next tool call or prompt
+    // clears the wait even before Chief Stew has read this event.
+    let marker = paths.waiting.appendingPathComponent(Paths.markerName(session))
+    if sub == "notify" {
+        let parsed = try? Event.parse(
+            JSONSerialization.data(withJSONObject: event.merging(["v": 1]) { a, _ in a }), fallbackDate: Date())
+        if parsed?.asksForInput == true {
+            try? fm.createDirectory(at: paths.waiting, withIntermediateDirectories: true)
+            fm.createFile(atPath: marker.path, contents: Data())
+        }
+    } else {
+        try? fm.removeItem(at: marker)
+    }
     exit(0)
 }
 

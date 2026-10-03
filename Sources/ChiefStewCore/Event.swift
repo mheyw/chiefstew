@@ -2,6 +2,8 @@ import Foundation
 
 /// One inbox event. See docs/event-contract.md § 3.
 public struct Event: Sendable, Equatable {
+    /// Unique per event, set by the emitter. Copies with the same ID are handled once.
+    public var id: String?
     public var ts: Date
     public var kind: String
     public var repo: String
@@ -43,6 +45,7 @@ public struct Event: Sendable, Equatable {
 
     public static let maxBytes = 16 * 1024
     public static let maxMessage = 200
+    public static let maxID = 64
     /// Gate names are the repo's own (review, qa, sign-off, …): a short lowercase token.
     public static func isGateName(_ s: String) -> Bool {
         (1...32).contains(s.count)
@@ -64,6 +67,33 @@ public struct Event: Sendable, Equatable {
     ]
 
     public var isAgentEvent: Bool { kind.hasPrefix("agent.") }
+
+    /// Claude Code's Notification hook fires for more than questions. Its idle reminder (60 s
+    /// after a turn ends) and auth notices aren't the agent asking anything: the Stop before the
+    /// reminder already said the session is waiting. Older Claude Code sends no type, so the
+    /// reminder is also recognised by its text.
+    public var asksForInput: Bool {
+        guard kind == "agent.needs_input" else { return false }
+        switch notificationType {
+        case "idle_prompt", "auth_success": return false
+        case nil: return message != "Claude is waiting for your input"
+        default: return true
+        }
+    }
+
+    /// The event as contract JSON (§3.1), as written to the journal.
+    public var json: [String: Any] {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var d: [String: Any] = ["v": 1, "ts": f.string(from: ts), "kind": kind, "repo": repo]
+        let optional: [String: Any?] = [
+            "id": id, "worktree": worktree, "build": build, "slug": slug, "lane": lane, "phase": phase,
+            "gate": gate, "session": session, "agent": agent, "notification_type": notificationType,
+            "message": message, "host_app": hostApp, "host_pid": hostPid, "tty": tty,
+        ]
+        for case let (k, v?) in optional { d[k] = v }
+        return d
+    }
 
     /// Parse and validate one inbox file. `fallbackDate` (the file's mtime) replaces a bad `ts`.
     public static func parse(_ data: Data, fallbackDate: Date) throws -> Event {
@@ -92,6 +122,7 @@ public struct Event: Sendable, Equatable {
             slug: string("slug"), lane: string("lane"), phase: phase, gate: gate,
             session: string("session"), agent: string("agent"),
             notificationType: string("notification_type"), message: message)
+        event.id = string("id").map { String($0.prefix(maxID)) }
         event.hostApp = string("host_app")
         event.hostPid = json["host_pid"] as? Int
         event.tty = string("tty")

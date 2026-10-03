@@ -47,6 +47,8 @@ public struct AgentTracker: Codable, Sendable, Equatable {
 
     public mutating func apply(_ e: Event) {
         guard e.isAgentEvent, let session = e.session else { return }
+        // A notification that isn't a question (an idle reminder) changes nothing.
+        if e.kind == "agent.needs_input" && !e.asksForInput { return }
         var s =
             sessions[session]
             ?? AgentState(

@@ -23,6 +23,11 @@ public struct Paths: Sendable, Equatable {
     /// Agent state, kept across launches.
     public var agents: URL { home.appendingPathComponent("agents.json") }
 
+    /// Every event handled, one JSON line each: replayed at launch to rebuild state, and the
+    /// record to read when state looks wrong. Rotated to `events.1.jsonl`.
+    public var journal: URL { home.appendingPathComponent("events.jsonl") }
+    public var journalPrevious: URL { home.appendingPathComponent("events.1.jsonl") }
+
     /// One empty file per agent session that needs input (contract § 1).
     public var waiting: URL { home.appendingPathComponent("waiting", isDirectory: true) }
 
