@@ -69,6 +69,9 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// Set aside on purpose: the Current state line starts with "Parked". Shown dimmed and last,
     /// and never in the menu-bar title.
     public var parked: Bool = false
+    /// An agent session in this build's checkout is mid-turn right now. On a parked build it
+    /// means the build was picked up again before its Current state line said so.
+    public var agentWorking: Bool = false
 }
 
 public struct NeedsItem: Sendable, Equatable, Identifiable {
@@ -340,7 +343,8 @@ extension Board {
             agentLine: agentLine, behind: row.behind, flags: row.flags, worktree: row.worktree,
             progress: row.progress, url: row.urls["admin"] ?? row.urls.values.sorted().first,
             staleSince: repo.statusError?.since,
-            parked: row.isParked)
+            parked: row.isParked,
+            agentWorking: latest.map { !$0.isIdle && now.timeIntervalSince($0.lastEventAt) < 30 * 60 } ?? false)
     }
 
     static func leftItems(repo: RepoSnapshot, sweep: SweepReport) -> [LeftItem] {

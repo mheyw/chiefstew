@@ -133,6 +133,26 @@ func rejectsMalformedEvents(json: String, expected: EventError) {
     #expect(board.header == "1 parked")
 }
 
+@Test func aParkedBuildWithAnAgentAtWorkSaysSo() {
+    let row = BuildRow(
+        num: "173", slug: "search_index", state: "Parked 2026-09-30", lastCommitAt: iso("2026-09-30T17:00:00Z"),
+        worktree: "/Users/you/my-app")
+    let repos = [RepoSnapshot(path: "/Users/you/my-app", status: StatusReport(builds: [row]))]
+    func agent(_ kind: String, _ at: String) -> AgentState {
+        AgentState(session: "s1", repo: "/Users/you/my-app", path: "/Users/you/my-app", lastEventAt: iso(at), lastKind: kind)
+    }
+    let now = iso("2026-10-03T10:30:00Z")
+    let working = Board.make(repos: repos, agents: [agent("agent.active", "2026-10-03T10:28:00Z")], now: now)
+    #expect(working.inProgress.first?.parked == true)  // the file still says parked
+    #expect(working.inProgress.first?.agentWorking == true)
+    #expect(working.menu.title == nil)
+    // A finished turn, or one long ago, isn't work in progress.
+    let idle = Board.make(repos: repos, agents: [agent("agent.stopped", "2026-10-03T10:28:00Z")], now: now)
+    #expect(idle.inProgress.first?.agentWorking == false)
+    let old = Board.make(repos: repos, agents: [agent("agent.active", "2026-10-03T09:00:00Z")], now: now)
+    #expect(old.inProgress.first?.agentWorking == false)
+}
+
 @Test func parkedSortsLastAndIsSkippedForTheTitle() {
     let rows = [
         BuildRow(num: "173", slug: "a", state: "Parked 2026-09-30", lastCommitAt: iso("2026-09-30T14:00:00Z")),

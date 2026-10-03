@@ -382,19 +382,19 @@ struct BuildRowView: View {
     var body: some View {
         Row {
             Line1(
-                dot: card.staleSince == nil && !card.parked ? Palette.running : Palette.dot,
+                dot: card.staleSince == nil && (!card.parked || card.agentWorking) ? Palette.running : Palette.dot,
                 name: Text("\(card.num) ").monospacedDigit() + Text(card.slug),
-                tag: card.parked ? "parked" : nil
+                tag: card.parked ? (card.agentWorking ? "parked · agent active" : "parked") : nil
             ) {
                 if card.parked {
-                    Text("parked")
+                    Text(card.agentWorking ? "parked · agent active" : "parked")
                 } else if let started = card.startedAt {
                     Text(Durations.short(now.timeIntervalSince(started)))
                 }
             }
             HStack(spacing: 0) {
                 if !card.dots.isEmpty {
-                    PhaseDotsView(dots: card.dots, dimmed: card.staleSince != nil || card.parked)
+                    PhaseDotsView(dots: card.dots, dimmed: card.staleSince != nil || (card.parked && !card.agentWorking))
                         .padding(.trailing, 6)
                 }
                 Text(line2)
@@ -427,7 +427,7 @@ struct BuildRowView: View {
                 }
             }
         }
-        .opacity(card.staleSince != nil ? 0.55 : card.parked ? 0.7 : 1)
+        .opacity(card.staleSince != nil ? 0.55 : card.parked && !card.agentWorking ? 0.7 : 1)
     }
 
     private var line2: String {
