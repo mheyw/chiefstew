@@ -1,5 +1,6 @@
 import AppKit
 import ChiefStewCore
+import ChiefStewUI
 import SwiftUI
 
 struct SettingsView: View {
@@ -39,7 +40,7 @@ private struct ReposPane: View {
                 .fixedSize(horizontal: false, vertical: true)
             if model.reposOverridden {
                 Text("The list is set by $CHIEFSTEW_REPOS for this run, so changes here aren't saved.")
-                    .font(.callout).foregroundStyle(.orange)
+                    .font(.callout).foregroundStyle(Palette.attentionText)
             }
             List {
                 if model.repos.isEmpty {
@@ -52,11 +53,11 @@ private struct ReposPane: View {
                             Text(repo).font(.caption).foregroundStyle(.secondary)
                             Text(sourceLine(repo)).font(.caption).foregroundStyle(.secondary)
                             if let error = model.snapshots[repo]?.statusError {
-                                Text(error.message).font(.caption).foregroundStyle(.red)
+                                Text(error.message).font(.caption).foregroundStyle(Palette.problemText)
                                     .lineLimit(2)
                             }
                             if model.events.doubledRepos(now: model.tick)[PathMatch.normalize(repo)] != nil {
-                                Text(EventState.doubledHint).font(.caption).foregroundStyle(.orange)
+                                Text(EventState.doubledHint).font(.caption).foregroundStyle(Palette.attentionText)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -105,13 +106,11 @@ private struct NotificationsPane: View {
             Section {
                 switch model.permission {
                 case .granted:
-                    Label("Chief Stew can send notifications.", systemImage: "checkmark.circle")
-                        .foregroundStyle(.green)
+                    StatusLabel("Chief Stew can send notifications.", systemImage: "checkmark.circle", tint: .green)
                     Text("While it runs, repo scripts that support Chief Stew leave notifying to it.")
                         .font(.callout).foregroundStyle(.secondary)
                 case .denied:
-                    Label("Notifications are off for Chief Stew.", systemImage: "bell.slash")
-                        .foregroundStyle(.orange)
+                    StatusLabel("Notifications are off for Chief Stew.", systemImage: "bell.slash", tint: .orange)
                     Text("Repo scripts that notify on their own keep doing so meanwhile.")
                         .font(.callout).foregroundStyle(.secondary)
                     Button("Open Notification Settings") {
@@ -170,7 +169,7 @@ private struct GeneralPane: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 if let launchError {
-                    Text(launchError).font(.callout).foregroundStyle(.red)
+                    Text(launchError).font(.callout).foregroundStyle(Palette.problemText)
                 }
             }
             Section("Updates") {
@@ -202,7 +201,7 @@ private struct GeneralPane: View {
                 HStack {
                     switch model.hooksState {
                     case .installed: Text("Installed for all repos (~/.claude/settings.json)")
-                    case .outdated: Text("Installed, but out of date").foregroundStyle(.orange)
+                    case .outdated: Text("Installed, but out of date").foregroundStyle(Palette.attentionText)
                     case .notInstalled: Text("Not installed").foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -213,7 +212,7 @@ private struct GeneralPane: View {
                         Button("Remove") { hooksError = model.removeHooks() }
                     }
                 }
-                if let hooksError { Text(hooksError).font(.callout).foregroundStyle(.red) }
+                if let hooksError { Text(hooksError).font(.callout).foregroundStyle(Palette.problemText) }
             }
             Section {
                 Picker("Open worktrees in", selection: $model.settings.worktreeApp) {
@@ -231,7 +230,7 @@ private struct GeneralPane: View {
                         ?? "No node on your login PATH. Only repos whose status command starts with `node` need it.")
                         .font(.callout).foregroundStyle(.secondary)
                 } else if let error = model.loginError {
-                    Text(error).font(.callout).foregroundStyle(.red)
+                    Text(error).font(.callout).foregroundStyle(Palette.problemText)
                 }
             }
         }

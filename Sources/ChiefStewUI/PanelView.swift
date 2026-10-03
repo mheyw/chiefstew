@@ -122,9 +122,9 @@ public struct PanelView: View {
             let (i, part) = item
             var piece = Text(part)
             if part.hasSuffix("need you") || part.hasSuffix("needs you") {
-                piece = piece.foregroundColor(Palette.attention).fontWeight(.semibold)
+                piece = piece.foregroundColor(Palette.attentionText).fontWeight(.semibold)
             } else if part.hasSuffix("stale") {
-                piece = piece.foregroundColor(Palette.problem)
+                piece = piece.foregroundColor(Palette.problemText)
             }
             return i == 0 ? piece : text + Text(" · ") + piece
         }
@@ -192,7 +192,7 @@ public struct PanelView: View {
 
     private var problems: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(text: "Problem", color: Palette.problem)
+            SectionTitle(text: "Problem", color: Palette.problemText)
             ForEach(board.problems) { p in
                 Row {
                     Line1(dot: Palette.problem, name: Text(p.repoName), help: p.repoName) {
@@ -217,7 +217,7 @@ public struct PanelView: View {
 
     private var needsYou: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(text: "Needs you", color: Palette.attention)
+            SectionTitle(text: "Needs you", color: Palette.attentionText)
             ForEach(Array(board.needsYou.enumerated()), id: \.element.id) { i, item in
                 if i > 0 { RowDivider() }
                 NeedsRow(item: item, now: now, actions: actions)
@@ -293,7 +293,7 @@ struct NeedsRow: View {
     var body: some View {
         Row {
             Line1(dot: Palette.attention, name: name, help: label) {
-                Text(rightText).foregroundStyle(Palette.attention)
+                Text(rightText).foregroundStyle(Palette.attentionText)
             }
             switch item.kind {
             case .gate(let gate):

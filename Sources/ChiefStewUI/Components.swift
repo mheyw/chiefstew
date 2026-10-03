@@ -1,11 +1,35 @@
+import AppKit
 import ChiefStewCore
 import SwiftUI
 
-enum Palette {
-    static let attention = Color(nsColor: .systemOrange)
-    static let running = Color(nsColor: .systemGreen)
-    static let problem = Color(nsColor: .systemRed)
-    static let dot = Color(nsColor: .secondaryLabelColor)
+/// System colours are for dots, icons and shapes. Text uses the `…Text` colours: as text on a
+/// light window, systemOrange and systemGreen are under 2:1.
+public enum Palette {
+    public static let attention = Color(nsColor: .systemOrange)
+    public static let running = Color(nsColor: .systemGreen)
+    public static let problem = Color(nsColor: .systemRed)
+    public static let dot = Color(nsColor: .secondaryLabelColor)
+
+    /// 5.2:1 on a light window, 6.2:1 dark.
+    public static let attentionText = adaptive(light: 0xB03A00, dark: .systemOrange)
+    /// 5.1:1 light, 4.6:1 dark.
+    public static let problemText = adaptive(light: 0xC4161C, dark: NSColor(rgb: 0xFF6961))
+    /// 5.4:1 light, 6.7:1 dark.
+    public static let okText = adaptive(light: 0x1A6E2C, dark: .systemGreen)
+
+    private static func adaptive(light: Int, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : NSColor(rgb: light)
+        })
+    }
+}
+
+extension NSColor {
+    fileprivate convenience init(rgb: Int) {
+        self.init(
+            srgbRed: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+    }
 }
 
 /// The 7 (full lane) or 4 (fast lane) phase dots.
@@ -72,6 +96,9 @@ struct PillButtonStyle: ButtonStyle {
             .background(
                 RoundedRectangle(cornerRadius: 5)
                     .fill(primary ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                    // Darkened so white text clears 4.5:1 on the default blue; a light user accent
+                    // (yellow, orange, green) still doesn't.
+                    .overlay(RoundedRectangle(cornerRadius: 5).fill(Color.black.opacity(primary ? 0.2 : 0)))
                     .shadow(color: .black.opacity(primary ? 0 : 0.12), radius: 0.5, y: 0.5)
             )
             .overlay(
@@ -140,5 +167,22 @@ struct FlowRow: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+}
+
+/// A status line in Settings and the wizard: the icon carries the colour, the text stays readable.
+public struct StatusLabel: View {
+    var text: String
+    var symbol: String
+    var tint: Color
+
+    public init(_ text: String, systemImage: String, tint: Color) {
+        self.text = text
+        self.symbol = systemImage
+        self.tint = tint
+    }
+
+    public var body: some View {
+        Label { Text(text) } icon: { Image(systemName: symbol).foregroundStyle(tint) }
     }
 }

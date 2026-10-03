@@ -1,5 +1,6 @@
 import AppKit
 import ChiefStewCore
+import ChiefStewUI
 import SwiftUI
 
 /// Add Repo: pick a git repo, switch on agent notifications for every repo (one click), and
@@ -81,8 +82,8 @@ struct AddRepoWizard: View {
                         Text(repo).font(.caption).foregroundStyle(.secondary)
                     }
                     if alreadyAdded {
-                        Label("Added. Chief Stew is watching this repo.", systemImage: "checkmark.circle.fill")
-                            .font(.caption).foregroundStyle(.green)
+                        StatusLabel("Added. Chief Stew is watching this repo.", systemImage: "checkmark.circle.fill", tint: .green)
+                            .font(.caption)
                         if !settingUp {
                             Button("Remove") { removeChosen() }.buttonStyle(.link).font(.caption)
                         }
@@ -102,7 +103,7 @@ struct AddRepoWizard: View {
                 }
                 .fixedSize()
             }
-            if let pickError { Text(pickError).font(.callout).foregroundStyle(.red) }
+            if let pickError { Text(pickError).font(.callout).foregroundStyle(Palette.problemText) }
         }
     }
 
@@ -113,9 +114,9 @@ struct AddRepoWizard: View {
             HStack {
                 switch model.hooksState {
                 case .installed:
-                    Label("Installed for all repos", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    StatusLabel("Installed for all repos", systemImage: "checkmark.circle.fill", tint: .green)
                 case .outdated:
-                    Label("Installed, but out of date", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
+                    StatusLabel("Installed, but out of date", systemImage: "exclamationmark.circle", tint: .orange)
                     Spacer()
                     Button("Update hooks") { hooksError = model.installHooks() }
                 case .notInstalled:
@@ -125,7 +126,7 @@ struct AddRepoWizard: View {
                         .buttonStyle(.borderedProminent)
                 }
             }
-            if let hooksError { Text(hooksError).font(.callout).foregroundStyle(.red) }
+            if let hooksError { Text(hooksError).font(.callout).foregroundStyle(Palette.problemText) }
         }
     }
 
@@ -140,7 +141,7 @@ struct AddRepoWizard: View {
                 Text("Status: \(RepoConfig.display(c.status ?? []))  (from \(c.source.rawValue))")
                     .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
             case .failure(let e):
-                Text(e.description).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                Text(e.description).font(.callout).foregroundStyle(Palette.problemText).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             default:
                 Text("Not described yet, so Chief Stew shows this repo's agents only.").font(.callout)
@@ -149,8 +150,9 @@ struct AddRepoWizard: View {
             // The live result: re-checked whenever .chiefstew.json changes.
             if let r = checkResult {
                 HStack {
-                    Label(r.summary, systemImage: r.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(r.ok ? .green : .orange)
+                    StatusLabel(
+                        r.summary, systemImage: r.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                        tint: r.ok ? .green : .orange)
                     Button(showDetails ? "Hide details" : "Details") { showDetails.toggle() }
                         .buttonStyle(.link)
                 }
@@ -164,8 +166,10 @@ struct AddRepoWizard: View {
                     .background(Color.primary.opacity(0.04))
                 }
             } else if let test {
-                Label(test.text, systemImage: test.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                    .font(.callout).foregroundStyle(test.ok ? .green : .red)
+                StatusLabel(
+                    test.text, systemImage: test.ok ? "checkmark.circle.fill" : "xmark.octagon.fill",
+                    tint: test.ok ? .green : .red)
+                    .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -208,15 +212,18 @@ struct AddRepoWizard: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
-                Circle().fill(done ? Color.green : Color.accentColor.opacity(0.15)).frame(width: 24, height: 24)
+                Circle().fill(done ? Palette.okText : Color.accentColor.opacity(0.15)).frame(width: 24, height: 24)
                 if done {
-                    Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+                    Image(systemName: "checkmark").font(.caption.bold())
+                        .foregroundStyle(Color(nsColor: .windowBackgroundColor))
                 } else {
-                    Text("\(n)").font(.callout.bold()).foregroundStyle(Color.accentColor)
+                    Text("\(n)").font(.callout.bold()).foregroundStyle(.primary)
                 }
             }
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.headline)
+                    .accessibilityLabel("Step \(n), \(title)\(done ? ", done" : "")")
                 content()
             }
         }
