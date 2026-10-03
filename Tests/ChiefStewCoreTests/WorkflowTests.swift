@@ -334,3 +334,23 @@ private let typical = """
     let all = try WorkflowSpec.parse(["builds": ["from": "branches", "branch": "feature/{slug}", "remote": true]]).get()
     #expect(WorkflowEngine(repo: repo.path, spec: all).run().report.builds.map(\.slug).contains("old"))
 }
+
+@Test func stateFromASectionStillLinksTheRealFile() throws {
+    let (repo, wt) = try sampleRepo()
+    try write(repo, ".chiefstew.json", """
+        {
+          v: 1,
+          workflow: {
+            builds: { from: "branches", branch: "feature/{slug}", folder: "docs/features/{slug}" },
+            state:  { file: "PLAN.md", section: "Phases", pick: "first-line" },
+          },
+        }
+        """)
+    let config = try RepoConfig.load(repo: repo.path).get()
+    let a = try #require(WorkflowEngine(repo: repo.path, spec: config.workflow!).run().report.builds.first)
+    #expect(!a.state.isEmpty)
+    // The section belongs in check's messages, not in the path "Open progress" opens.
+    let progress = try #require(a.progress)
+    #expect(progress == PathMatch.normalize(wt.path) + "/docs/features/a/PLAN.md")
+    #expect(FileManager.default.fileExists(atPath: progress))
+}

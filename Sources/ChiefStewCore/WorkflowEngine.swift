@@ -291,11 +291,11 @@ public struct WorkflowEngine: Sendable {
 
         // state
         if let rule = spec.state {
-            let (text, file, why) = read(rule.at, base: base, c)
+            let (text, file, why, path) = read(rule.at, base: base, c)
             if let text, let value = Self.extract(text, pick: rule.pick, match: rule.match, group: "state") {
                 row.state = Self.plain(value)
                 note("state", true, "\(file ?? "") → \"\(String(row.state.prefix(70)))\"")
-                if let file, let wt = c.worktree { row.progress = (wt as NSString).appendingPathComponent(file) }
+                if let path, let wt = c.worktree { row.progress = (wt as NSString).appendingPathComponent(path) }
             } else {
                 row.state = Self.plain(last?.subject ?? "")
                 note("state", false, (why ?? "\(file ?? "file") matched nothing") + "; using the last commit subject")
@@ -306,7 +306,7 @@ public struct WorkflowEngine: Sendable {
 
         // lane, parked, closed
         if let rule = spec.lane {
-            let (text, file, why) = read(rule.at, base: base, c)
+            let (text, file, why, _) = read(rule.at, base: base, c)
             let value = text.flatMap { Self.extract($0, pick: rule.pick, match: rule.match, group: "lane") }
             row.lane = value ?? rule.fallback
             note("lane", value != nil || rule.fallback != nil, value.map { "\(file ?? "") → \($0)" } ?? (why ?? "no match; default \(rule.fallback ?? "none")"))
@@ -316,7 +316,7 @@ public struct WorkflowEngine: Sendable {
 
         // phases
         if let rule = spec.phases {
-            let (text, file, why) = read(rule.at, base: base, c)
+            let (text, file, why, _) = read(rule.at, base: base, c)
             if let text {
                 var phases = Self.phases(text, rule.list)
                 if let skip = spec.skip {
@@ -334,7 +334,7 @@ public struct WorkflowEngine: Sendable {
 
         // gates
         if let rule = spec.gates {
-            let (text, file, why) = read(rule.at, base: base, c)
+            let (text, file, why, _) = read(rule.at, base: base, c)
             if let text {
                 row.gates = Self.records(text, rule.list).compactMap { r in gate(r, rule, base: base, c) }
                 note("gates", true, row.gates.isEmpty ? "\(file ?? "") → none open"
@@ -346,7 +346,7 @@ public struct WorkflowEngine: Sendable {
 
         // tasks
         if let at = spec.tasks {
-            let (text, file, why) = read(at, base: base, c)
+            let (text, file, why, _) = read(at, base: base, c)
             if let text {
                 let boxes = Self.checkboxes(text)
                 row.tasks = boxes.isEmpty ? nil : TaskCount(done: boxes.filter(\.done).count, total: boxes.count)
@@ -384,17 +384,18 @@ public struct WorkflowEngine: Sendable {
 
     // MARK: reading
 
-    /// Text at a locator for a build: (text, the file used, why not).
-    func read(_ at: WorkflowSpec.Locator, base: String, _ c: Candidate) -> (String?, String?, String?) {
+    /// Text at a locator for a build: (text, the file used with its section, why not, the file
+    /// used). The second is for messages; the last is a real path relative to the checkout.
+    func read(_ at: WorkflowSpec.Locator, base: String, _ c: Candidate) -> (String?, String?, String?, String?) {
         for file in at.files {
             let rel = (base as NSString).appendingPathComponent(Self.fill(file, c, gate: nil))
             guard let text = readFile(rel, c) else { continue }
-            guard let section = at.section else { return (text, rel, nil) }
-            if let body = Self.section(text, section) { return (body, "\(rel) § \(section)", nil) }
-            return (nil, rel, "\(rel) has no \"\(section)\" section")
+            guard let section = at.section else { return (text, rel, nil, rel) }
+            if let body = Self.section(text, section) { return (body, "\(rel) § \(section)", nil, rel) }
+            return (nil, rel, "\(rel) has no \"\(section)\" section", rel)
         }
         let tried = at.files.map { (base as NSString).appendingPathComponent(Self.fill($0, c, gate: nil)) }
-        return (nil, nil, "not found: \(tried.joined(separator: ", "))")
+        return (nil, nil, "not found: \(tried.joined(separator: ", "))", nil)
     }
 
     func readFile(_ rel: String, _ c: Candidate) -> String? {
