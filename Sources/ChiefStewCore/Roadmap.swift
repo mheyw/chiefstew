@@ -28,6 +28,8 @@ public struct RoadmapSpec: Sendable, Equatable {
     public var groupMatch: String?
     public var columns: Columns
     public var status: [RowStatus: String] = [:]
+    /// Keys this copy doesn't know: ignored, and reported by `chiefstew check`.
+    public var warnings: [WorkflowSpec.Problem] = []
 
     public init(file: String, columns: Columns) {
         self.file = file
@@ -37,13 +39,14 @@ public struct RoadmapSpec: Sendable, Equatable {
     /// Parses and checks the `roadmap` object, reporting every problem with its path.
     public static func parse(_ any: Any) -> Result<RoadmapSpec, WorkflowSpec.Problems> {
         var problems: [WorkflowSpec.Problem] = []
+        var warnings: [WorkflowSpec.Problem] = []
         func fail(_ path: String, _ message: String) { problems.append(.init(path: path, message: message)) }
         guard let o = any as? [String: Any] else {
             return .failure(.init(list: [.init(path: "roadmap", message: "must be an object")]))
         }
         func unknown(_ object: [String: Any], _ known: Set<String>, _ path: String) {
             for key in object.keys.sorted() where !known.contains(key) {
-                fail("\(path).\(key)", "unknown key (known: \(known.sorted().joined(separator: ", ")))")
+                warnings.append(.init(path: "\(path).\(key)", message: WorkflowSpec.unknownKey(known)))
             }
         }
         func regex(_ value: Any?, _ path: String) -> String? {
@@ -102,6 +105,7 @@ public struct RoadmapSpec: Sendable, Equatable {
                 fail("roadmap.status", "must be an object of regular expressions")
             }
         }
+        spec.warnings = warnings
         return problems.isEmpty ? .success(spec) : .failure(.init(list: problems))
     }
 }

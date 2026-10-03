@@ -99,16 +99,22 @@ private let spec: RoadmapSpec = {
 
 // MARK: - The description
 
-@Test func roadmapSpecReportsEveryProblemWithItsPath() {
+@Test func roadmapSpecReportsEveryProblemWithItsPath() throws {
     let bad: [String: Any] = [
         "file": "/abs/roadmap.md", "colums": [:], "group": ["match": "("],
         "status": ["done": "[", "shipped": "x"],
     ]
     guard case .failure(let p) = RoadmapSpec.parse(bad) else { Issue.record("expected problems"); return }
-    let paths = p.list.map(\.path)
-    for path in ["roadmap.file", "roadmap.colums", "roadmap.columns", "roadmap.group.match", "roadmap.status.done", "roadmap.status.shipped"] {
-        #expect(paths.contains(path), "\(path) in \(paths)")
-    }
+    #expect(p.list.map(\.path) == ["roadmap.file", "roadmap.columns", "roadmap.group.match", "roadmap.status.done"])
+
+    // Unknown keys alone don't break it: they're warnings.
+    var ok = bad
+    ok["file"] = "docs/roadmap.md"
+    ok["columns"] = ["num": "#"]
+    ok["group"] = ["match": "^Stage"]
+    ok["status"] = ["done": "^Done", "shipped": "x"]
+    let spec = try #require(try? RoadmapSpec.parse(ok).get())
+    #expect(spec.warnings.map(\.path) == ["roadmap.colums", "roadmap.status.shipped"])
 }
 
 @Test func aBrokenRoadmapNeverStopsStatus() throws {

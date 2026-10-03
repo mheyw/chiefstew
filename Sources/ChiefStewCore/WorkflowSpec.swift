@@ -68,6 +68,9 @@ public struct WorkflowSpec: Sendable, Equatable {
     public var tasks: Locator?
     /// The phases the tasks belong to: they're reported only while one of them is active.
     public var tasksPhases: [Int]?
+    /// Keys this copy doesn't know: ignored, and reported by `chiefstew check`. A typo, or a key a
+    /// newer Chief Stew understands, so a description written for a newer copy still works here.
+    public var warnings: [Problem] = []
 
     public static func == (a: WorkflowSpec, b: WorkflowSpec) -> Bool {
         a.builds == b.builds && a.includeRemote == b.includeRemote && a.folder == b.folder && a.state == b.state && a.lane == b.lane
@@ -92,13 +95,17 @@ public struct WorkflowSpec: Sendable, Equatable {
     /// Parses and checks the `workflow` object.
     public static func parse(_ any: Any) -> Result<WorkflowSpec, Problems> {
         var problems: [Problem] = []
+        var warnings: [Problem] = []
         func fail(_ path: String, _ message: String) { problems.append(Problem(path: path, message: message)) }
+        func unknown(_ path: String, _ known: Set<String>) {
+            warnings.append(Problem(path: path, message: Self.unknownKey(known)))
+        }
         guard let w = any as? [String: Any] else {
             return .failure(Problems(list: [Problem(path: "workflow", message: "must be an object")]))
         }
         let known: Set<String> = ["builds", "folder", "state", "lane", "parked", "closed", "phases", "gates", "tasks"]
         for key in w.keys.sorted() where !known.contains(key) {
-            fail("workflow.\(key)", "unknown key (known: \(known.sorted().joined(separator: ", ")))")
+            unknown("workflow.\(key)", known)
         }
 
         func regex(_ pattern: String, _ path: String) -> String? {
@@ -120,8 +127,9 @@ public struct WorkflowSpec: Sendable, Equatable {
             }
             return Locator(files: files, section: o["section"] as? String)
         }
-        // Keys each rule understands. Anything else is reported: a guess like "line": 1 must
-        // not look as if it did something.
+        // Keys each rule understands. Anything else is ignored and reported by `check`: a guess
+        // like "line": 1 must not look as if it did something, and a key from a newer Chief Stew
+        // must not break an older one.
         let allowed: [String: Set<String>] = [
             "builds": ["from", "branch", "folder", "remote"],
             "state": ["file", "section", "pick", "match", "default"],
@@ -139,7 +147,7 @@ public struct WorkflowSpec: Sendable, Equatable {
             }
             if let ok = allowed[key] {
                 for k in o.keys.sorted() where !ok.contains(k) {
-                    fail("workflow.\(key).\(k)", "unknown key (known: \(ok.sorted().joined(separator: ", ")))")
+                    unknown("workflow.\(key).\(k)", ok)
                 }
             }
             return o
@@ -231,10 +239,16 @@ public struct WorkflowSpec: Sendable, Equatable {
                 else { fail("workflow.tasks.phase", "a phase number, or a list of them") }
             }
         }
+        var seen = Set<String>()
+        spec.warnings = warnings.filter { seen.insert($0.path).inserted }
         return problems.isEmpty ? .success(spec) : .failure(Problems(list: problems))
     }
 
     public init(builds: Builds) { self.builds = builds }
+
+    static func unknownKey(_ known: Set<String>) -> String {
+        "unknown key, ignored: a typo, or a key a newer Chief Stew understands (known: \(known.sorted().joined(separator: ", ")))"
+    }
 
     /// A gate's name as a tidy token: "Design review" → "design-review".
     public static func gateKey(_ s: String) -> String {

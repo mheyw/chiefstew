@@ -289,4 +289,4 @@ The sweep command reports leftovers from finished work. It only reports; it neve
 
 ## 7. Versioning
 
-Adding optional fields or new kinds is **not** a version change. Removing or renaming a field, or changing what one means, bumps `v`. Chief Stew then supports both versions for one release.
+Adding optional fields or new kinds is **not** a version change. That covers `.chiefstew.json` too: from v0.2.2, keys inside `workflow` and `roadmap` that a copy doesn't know are ignored (and reported by `chiefstew check`), so a description written for a newer Chief Stew still works on an older one, without the newer key's effect. Copies before v0.2.2 rejected such keys, so a repo committing a key added since should expect teammates to have updated. Removing or renaming a field, or changing what one means, bumps `v`. Chief Stew then supports both versions for one release.

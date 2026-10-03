@@ -20,6 +20,9 @@ public enum WorkflowCheck {
             let known = RepoConfig.knownKeys.sorted().joined(separator: ", ")
             result.text += "\n\n⚠ Unknown key\(c.unknownKeys.count == 1 ? "" : "s") in .chiefstew.json, ignored: \(c.unknownKeys.joined(separator: ", ")) (known: \(known))"
         }
+        if !c.warnings.isEmpty {
+            result.text += "\n\n" + c.warnings.map { "⚠ \($0.path): \($0.message)" }.joined(separator: "\n")
+        }
         if c.roadmap != nil || c.roadmapProblem != nil {
             let r = roadmap(repo: repo, config: c)
             result.text += "\n\n" + r.text

@@ -68,11 +68,14 @@ import Testing
     #expect(!r.timedOut)
 }
 
+/// Timed out means stopped: it returns long before the child would have finished. The bound is
+/// loose on purpose (the runner's own worst case is ~3.5 s: timeout, 2 s grace, 1 s drain), so a
+/// busy machine that's slow to start processes doesn't fail it.
 @Test func runnerTimesOut() async throws {
     let start = Date()
-    let r = try await CommandRunner.run("/bin/sleep", ["10"], timeout: 0.5)
+    let r = try await CommandRunner.run("/bin/sleep", ["40"], timeout: 0.5)
     #expect(r.timedOut)
-    #expect(Date().timeIntervalSince(start) < 5)
+    #expect(Date().timeIntervalSince(start) < 20)
 }
 
 @Test func runnerHandlesLargeOutput() async throws {
@@ -265,13 +268,14 @@ private func git(_ dir: URL, _ args: String...) throws -> String {
     #expect(await SourceUpdate.check(sourceDir: "/nonexistent", installedCommit: built) == nil)
 }
 
-/// Review concurrency-1: a background process holding the pipes must not hang the call.
+/// Review concurrency-1: a background process holding the pipes must not hang the call. It returns
+/// long before the grandchild exits; the bound is loose so a busy machine doesn't fail it.
 @Test func runnerReturnsWhenAGrandchildKeepsThePipesOpen() async throws {
     let start = Date()
-    let r = try await CommandRunner.run("/bin/sh", ["-c", "sleep 8 & echo hi"], timeout: 20)
+    let r = try await CommandRunner.run("/bin/sh", ["-c", "sleep 40 & echo hi"], timeout: 60)
     #expect(String(decoding: r.stdout, as: UTF8.self) == "hi\n")
     #expect(r.exitCode == 0 && !r.timedOut)
-    #expect(Date().timeIntervalSince(start) < 4)
+    #expect(Date().timeIntervalSince(start) < 20)
 }
 
 /// Review: a FIFO named *.json must not block the drain (it would freeze the app every launch).

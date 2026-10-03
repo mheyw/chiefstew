@@ -158,10 +158,25 @@ private let typical = """
         return
     }
     let paths = p.list.map(\.path)
-    #expect(paths.contains("workflow.builds.branch"))
-    #expect(paths.contains("workflow.phases.list"))
-    #expect(paths.contains("workflow.colour"))
-    #expect(paths.contains("workflow.state.line"))  // a guessed key is reported, not ignored
+    #expect(paths == ["workflow.builds.branch", "workflow.phases.list"])
+}
+
+/// An unknown key is a warning, not an error: a typo is still reported (by `check`), and a key a
+/// newer Chief Stew added doesn't break an older copy, which just doesn't apply it.
+@Test func unknownKeysAreIgnoredAndReported() throws {
+    let repo = try tempDir()
+    let fm = FileManager.default
+    fm.createFile(atPath: repo.appendingPathComponent(".chiefstew.json").path, contents: Data("""
+        { v: 1, workflow: { builds: { from: "worktrees", someday: true }, colour: "blue",
+                            state: { file: "STATUS.md", line: 1 } } }
+        """.utf8))
+    let c = try RepoConfig.load(repo: repo.path).get()
+    #expect(c.workflow?.builds == .worktrees)
+    #expect(c.warnings.map(\.path) == ["workflow.colour", "workflow.builds.someday", "workflow.state.line"])
+    #expect(c.warnings[0].message.hasPrefix("unknown key, ignored: a typo, or a key a newer Chief Stew understands"))
+    let check = WorkflowCheck.run(repo: repo.path)
+    #expect(check.ok)
+    #expect(check.text.contains("⚠ workflow.state.line: unknown key, ignored"))
 }
 
 @Test func workflowAndStatusTogetherIsAnError() throws {

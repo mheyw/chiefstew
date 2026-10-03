@@ -25,6 +25,11 @@ public struct RepoConfig: Sendable, Equatable {
     public var roadmapProblem: String?
     /// Top-level keys Chief Stew doesn't know (a misspelt `roadmp`, say), for `chiefstew check`.
     public var unknownKeys: [String] = []
+    /// Keys inside `workflow` and `roadmap` this copy doesn't know: ignored, and reported by
+    /// `chiefstew check`. A description that uses a newer copy's keys still works here.
+    public var warnings: [WorkflowSpec.Problem] {
+        (workflow?.warnings ?? []) + (roadmap?.warnings ?? [])
+    }
 
     public static let fileName = ".chiefstew.json"
     static let knownKeys: Set<String> = ["v", "name", "status", "sweep", "workflow", "roadmap"]
