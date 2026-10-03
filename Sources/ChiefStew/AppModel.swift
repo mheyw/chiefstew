@@ -769,6 +769,12 @@ final class AppModel {
             WorktreeApps.open(s.path, with: bundle)
             return
         }
+        if let bundle = host.bundleIdentifier, let tty = s.tty, TerminalTab.supports(bundle) {
+            Task {
+                if await !TerminalTab.select(tty: tty, in: bundle) { host.activate() }
+            }
+            return
+        }
         host.activate()
     }
 

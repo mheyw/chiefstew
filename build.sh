@@ -186,6 +186,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Go to session brings forward the terminal tab the agent is running in.</string>
   <key>ChiefStewSourceDir</key><string>$(xml "$SOURCE_DIR")</string>
   <key>ChiefStewSourceCommit</key><string>$(xml "$SOURCE_COMMIT")</string>
 </dict>
