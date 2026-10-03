@@ -149,6 +149,7 @@ private struct GeneralPane: View {
     @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var launchError: String?
     @State private var nodePath = ""
+    @FocusState private var nodeFocused: Bool
     @State private var hooksError: String?
 
     var body: some View {
@@ -188,7 +189,7 @@ private struct GeneralPane: View {
                     HStack {
                         Text(model.update == .installing
                             ? "Installing… Chief Stew builds it (about a minute), restarts, and reopens Settings here."
-                            : "Checks hourly. An update installs in the background and Chief Stew restarts by itself.")
+                            : model.updateCaption)
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         if model.checkingNow { ProgressView().controlSize(.small) }
@@ -224,7 +225,9 @@ private struct GeneralPane: View {
             }
             Section("Node") {
                 TextField("Path to node (leave empty to find it through your login shell)", text: $nodePath)
-                    .onSubmit { model.settings.nodePath = nodePath.isEmpty ? nil : nodePath }
+                    .focused($nodeFocused)
+                    .onSubmit(commitNode)
+                    .onChange(of: nodeFocused) { _, focused in if !focused { commitNode() } }
                 if let login = model.login {
                     Text(login.node.map { "Using \($0) (\(login.nodeVersion ?? "unknown version"))" }
                         ?? "No node on your login PATH. Only repos whose status command starts with `node` need it.")
@@ -239,5 +242,12 @@ private struct GeneralPane: View {
             nodePath = model.settings.nodePath ?? ""
             model.refreshHooksState()
         }
+        .onDisappear(perform: commitNode)
+    }
+
+    /// Saved on Return and also when the field loses focus or Settings closes, so an edit is never dropped.
+    private func commitNode() {
+        let path = nodePath.trimmingCharacters(in: .whitespaces)
+        model.settings.nodePath = path.isEmpty ? nil : path
     }
 }

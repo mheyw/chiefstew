@@ -38,14 +38,18 @@ public struct PanelView: View {
     var board: Board
     var now: Date
     var update: UpdateBanner?
+    /// A refresh the owner asked for is running.
+    var refreshing: Bool
     var actions: PanelActions
 
     public init(
-        board: Board, now: Date, update: UpdateBanner? = nil, actions: PanelActions = PanelActions()
+        board: Board, now: Date, update: UpdateBanner? = nil, refreshing: Bool = false,
+        actions: PanelActions = PanelActions()
     ) {
         self.board = board
         self.now = now
         self.update = update
+        self.refreshing = refreshing
         self.actions = actions
     }
 
@@ -134,7 +138,12 @@ public struct PanelView: View {
     /// General). Each keeps its name for VoiceOver and as a hover tooltip.
     private var footer: some View {
         HStack(spacing: 4) {
-            FooterIcon("Refresh", "arrow.clockwise", action: actions.refresh).keyboardShortcut("r")
+            if refreshing {
+                ProgressView().controlSize(.small).frame(width: 28, height: 24)
+                    .accessibilityLabel("Refreshing")
+            } else {
+                FooterIcon("Refresh", "arrow.clockwise", action: actions.refresh).keyboardShortcut("r")
+            }
             FooterIcon("Repos", "folder", action: actions.openRepos)
             FooterIcon("Notifications", "bell", action: actions.openNotifications)
             FooterIcon("Settings", "gearshape", action: actions.openSettings).keyboardShortcut(",")
@@ -211,7 +220,9 @@ public struct PanelView: View {
                         Text(hint).font(.system(size: 12)).indented()
                     }
                     Actions {
-                        Button("Retry") { actions.refresh() }.buttonStyle(PillButtonStyle())
+                        Button(refreshing ? "Retrying…" : "Retry") { actions.refresh() }
+                            .buttonStyle(PillButtonStyle())
+                            .disabled(refreshing)
                         Button("Copy error") { actions.copy(p.error.message) }
                             .buttonStyle(PillButtonStyle())
                     }

@@ -21,6 +21,7 @@ struct AddRepoWizard: View {
     @State private var showDetails = false
     @State private var watchedStamp: Date?
     @State private var watcher: Task<Void, Never>?
+    @State private var checkTask: Task<Void, Never>?
     /// Added by this wizard (not already registered): swapped out if another folder is chosen.
     @State private var addedHere: String?
     /// Opened from a repo's "Set up…" rather than "Add Repo…".
@@ -189,7 +190,7 @@ struct AddRepoWizard: View {
                 }
                 Spacer()
                 if testing { ProgressView().controlSize(.small) }
-                Button("Check again") { check() }
+                Button("Check again") { check() }.disabled(testing)
             }
             if let launchMessage {
                 Text(launchMessage).font(.callout).foregroundStyle(.secondary)
@@ -284,19 +285,26 @@ struct AddRepoWizard: View {
         checkResult = nil
         launchMessage = nil
         watcher?.cancel()
+        checkTask?.cancel()
+        testing = false
     }
 
     private func check() {
         guard let repo else { return }
         config = RepoConfig.load(repo: repo)
         testing = true
-        Task {
+        checkTask?.cancel()  // a newer check wins; an older result must not land after it
+        checkTask = Task {
             if case .success(let c) = config, c.source == .workflow {
-                checkResult = await Task.detached { WorkflowCheck.run(repo: repo) }.value
+                let result = await Task.detached { WorkflowCheck.run(repo: repo) }.value
+                guard !Task.isCancelled else { return }
+                checkResult = result
                 test = nil
             } else {
+                let result = await model.testStatus(repo)
+                guard !Task.isCancelled else { return }
                 checkResult = nil
-                test = await model.testStatus(repo)
+                test = result
             }
             testing = false
         }
@@ -358,17 +366,9 @@ struct AddRepoWizard: View {
         }
     }
 
-    private func openTerminal() {
-        guard let repo,
-            let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
-        else { return }
-        NSWorkspace.shared.open(
-            [URL(fileURLWithPath: repo, isDirectory: true)], withApplicationAt: terminal,
-            configuration: NSWorkspace.OpenConfiguration())
-    }
-
     private func close() {
         watcher?.cancel()
+        checkTask?.cancel()
         model.wizardRepo = nil
         model.showAddRepo = false
         dismiss()

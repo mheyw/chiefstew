@@ -56,6 +56,7 @@ private struct PanelHost: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             PanelView(
                 board: model.board(now: context.date), now: context.date, update: model.update,
+                refreshing: model.refreshing,
                 actions: model.actions { tab in
                     model.settingsTab = tab
                     openSettings()

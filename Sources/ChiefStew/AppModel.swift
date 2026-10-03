@@ -259,6 +259,9 @@ final class AppModel {
         }
         if checkingNow { return "Checking for updates…" }
         if update == .installing { return "Installing \(updateTarget?.label ?? "the update")… Chief Stew restarts by itself in about a minute." }
+        if case .failed(let log) = update {
+            return "\(updateTarget?.label ?? "The update") didn't install. The log is at \(log). Check now tries again."
+        }
         if settings.updateMode == .off { return "Updates are off. You're on v\(installedVersion)." }
         if let t = updateTarget, case .available = update { return "\(t.label ?? "An update") is available." }
         if settings.updateChannel == .releases, let f = lastUpdateFetch, !f.ok {
@@ -266,6 +269,23 @@ final class AppModel {
         }
         let checked = lastUpdateCheck == .distantPast ? "" : ", checked \(Durations.ago(Date().timeIntervalSince(lastUpdateCheck)))"
         return "Up to date: v\(installedVersion)\(checked)."
+    }
+
+    /// The caption under the Updates pickers: what the chosen mode and channel actually do.
+    var updateCaption: String {
+        let minutes = Int(Self.backgroundInterval(settings.updateChannel) / 60)
+        let when = minutes == 60 ? "hourly" : "every \(minutes) minutes"
+        switch settings.updateMode {
+        case .automatic: return "Checks \(when). An update installs in the background and Chief Stew restarts by itself."
+        case .ask: return "Checks \(when) and notifies you before installing."
+        case .off: return "Doesn't check on its own. Check now checks and installs straight away."
+        }
+    }
+
+    /// How often the background loop checks each channel. A release check is a small `git fetch`
+    /// of tags; main is purely local.
+    static func backgroundInterval(_ channel: UpdateChannel) -> TimeInterval {
+        channel == .releases ? 3600 : updateCheckInterval
     }
 
     enum CheckReason {
@@ -276,6 +296,9 @@ final class AppModel {
         /// Check now: straight away, and install whatever it finds.
         case now
     }
+
+    /// True while a refresh the owner asked for (Refresh, Retry) is running.
+    private(set) var refreshing = false
 
     /// True while a Check now is running, so the click always visibly does something.
     private(set) var checkingNow = false
@@ -288,14 +311,12 @@ final class AppModel {
             update = nil
             return
         }
-        // A release check is a small `git fetch` of tags; main is purely local.
         let interval: TimeInterval
         switch (reason, settings.updateChannel) {
         case (.now, _): interval = 0
         case (.panel, .releases): interval = 10 * 60
         case (.panel, .main): interval = 30
-        case (.background, .releases): interval = 3600
-        case (.background, .main): interval = Self.updateCheckInterval
+        case (.background, let channel): interval = Self.backgroundInterval(channel)
         }
         let now = Date()
         guard now.timeIntervalSince(lastUpdateCheck) >= interval else { return }
@@ -802,7 +823,7 @@ final class AppModel {
     /// A file that's only in git (`ref:path`, the build isn't checked out): read it with
     /// `git show` (read-only), save a read-only copy in the cache folder, and open that.
     func openFromGit(repo: String, spec: String) async {
-        guard let colon = spec.firstIndex(of: ":") else { return }
+        guard let colon = spec.firstIndex(of: ":") else { return cantOpen(spec, repo: repo) }
         let ref = String(spec[..<colon])
         let path = String(spec[spec.index(after: colon)...])
         guard !repo.isEmpty, !path.contains(".."),
@@ -811,10 +832,7 @@ final class AppModel {
                 environment: ["GIT_OPTIONAL_LOCKS": "0", "PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()],
                 timeout: 10),
             r.exitCode == 0, r.stdout.count <= 2 * 1024 * 1024
-        else {
-            log.error("couldn't read \(spec, privacy: .public) from git")
-            return
-        }
+        else { return cantOpen(spec, repo: repo) }
         let safe = { (s: String) in s.map { $0.isLetter || $0.isNumber || "-_.".contains($0) ? $0 : "_" } }
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches/Chief Stew/artefacts")
@@ -825,9 +843,20 @@ final class AppModel {
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
         try? fm.removeItem(at: file)
-        guard (try? r.stdout.write(to: file)) != nil else { return }
+        guard (try? r.stdout.write(to: file)) != nil else { return cantOpen(spec, repo: repo) }
         try? fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)  // a copy, not the real file
         openFile(file.path)
+    }
+
+    /// The Open button was clicked, so say why nothing opened rather than doing nothing.
+    private func cantOpen(_ spec: String, repo: String) {
+        log.error("couldn't read \(spec, privacy: .public) from git")
+        let name = URL(fileURLWithPath: String(spec.split(separator: ":", maxSplits: 1).last ?? "")).lastPathComponent
+        let alert = NSAlert()
+        alert.messageText = "Couldn't open \(name)"
+        alert.informativeText = "Chief Stew couldn't read \(spec) from \(URL(fileURLWithPath: repo).lastPathComponent)'s git history. The branch may have moved or been deleted."
+        NSApp.activate()
+        alert.runModal()
     }
 
     /// Files from status (gate artefacts, progress.md) open in their default app, but never
@@ -857,9 +886,12 @@ final class AppModel {
             NSPasteboard.general.setString($0, forType: .string)
         }
         a.refresh = { [weak self] in
+            guard let self, !self.refreshing else { return }
+            self.refreshing = true
             Task {
-                await self?.refreshAll()
-                await self?.sweepAll()
+                await self.refreshAll()
+                await self.sweepAll()
+                self.refreshing = false
             }
         }
         a.installUpdate = { [weak self] in self?.installUpdate() }
