@@ -67,7 +67,7 @@ public struct PanelView: View {
             } else {
                 if !board.problems.isEmpty { section { problems } }
                 if !board.needsYou.isEmpty { section { needsYou } }
-                if !board.inProgress.isEmpty { section { inProgress } }
+                if !board.inProgress.isEmpty || !board.agentsWorking.isEmpty { section { inProgress } }
                 if !board.team.isEmpty { section { team } }
                 if !board.leftBehind.isEmpty || !board.leftNotes.isEmpty { section { leftBehind } }
             }
@@ -108,7 +108,7 @@ public struct PanelView: View {
     }
 
     private var isEmpty: Bool {
-        board.problems.isEmpty && board.needsYou.isEmpty && board.inProgress.isEmpty
+        board.problems.isEmpty && board.needsYou.isEmpty && board.inProgress.isEmpty && board.agentsWorking.isEmpty
             && board.team.isEmpty && board.leftBehind.isEmpty && board.leftNotes.isEmpty
     }
 
@@ -258,6 +258,10 @@ public struct PanelView: View {
                 if i > 0 { RowDivider() }
                 BuildRowView(card: card, now: now, actions: actions)
             }
+            ForEach(Array(board.agentsWorking.enumerated()), id: \.element.id) { i, agents in
+                if i > 0 || !board.inProgress.isEmpty { RowDivider() }
+                AgentsRow(agents: agents, actions: actions)
+            }
         }
     }
 
@@ -404,7 +408,10 @@ struct NeedsRow: View {
     }
 
     @ViewBuilder private func worktreeButton(primary: Bool) -> some View {
-        if let wt = item.worktree {
+        if let folder = item.card?.folder {
+            Button("Open folder") { actions.openFolder(folder) }
+                .buttonStyle(PillButtonStyle(primary: primary))
+        } else if let wt = item.worktree {
             Button("Open worktree") { actions.openFolder(wt) }
                 .buttonStyle(PillButtonStyle(primary: primary))
         }
@@ -440,7 +447,7 @@ struct BuildRowView: View {
                         Text("\(label)\(clock.elapsed < 60 ? "0 min" : Durations.short(clock.elapsed)) of \(budget.text)")
                     }
                 } else if let started = card.startedAt {
-                    Text(Durations.short(now.timeIntervalSince(started)))
+                    Text(card.startedDateOnly ? Durations.sinceDay(started, now: now) : Durations.short(now.timeIntervalSince(started)))
                 }
             }
             HStack(spacing: 0) {
@@ -469,7 +476,10 @@ struct BuildRowView: View {
                     Button("Open progress") { actions.openFile(progress) }
                         .buttonStyle(PillButtonStyle())
                 }
-                if let wt = card.worktree {
+                if let folder = card.folder {
+                    Button("Open folder") { actions.openFolder(folder) }
+                        .buttonStyle(PillButtonStyle())
+                } else if let wt = card.worktree {
                     Button("Open worktree") { actions.openFolder(wt) }
                         .buttonStyle(PillButtonStyle())
                 } else {
@@ -501,6 +511,31 @@ struct BuildRowView: View {
             parts.append("last commit \(Durations.ago(now.timeIntervalSince(card.lastActivity)))")
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Agents working in a repo but not on one build (its main checkout, or a checkout several
+/// builds share): Chief Stew says they're working, and doesn't guess which build it's for.
+struct AgentsRow: View {
+    var agents: RepoAgents
+    var actions: PanelActions
+
+    var body: some View {
+        let label = "Claude in \(agents.repoName)"
+        Row(label: label) {
+            Line1(dot: Palette.running, name: Text(label), help: agents.repoPath) {
+                Text(agents.sessions.count == 1 ? "working" : "\(agents.sessions.count) sessions working")
+            }
+            Actions {
+                ForEach(Array(agents.sessions.prefix(3).enumerated()), id: \.element) { i, session in
+                    Button(agents.sessions.count == 1 ? "Go to session" : "Go to session \(i + 1)") {
+                        actions.goToSession(session)
+                    }
+                    .buttonStyle(PillButtonStyle())
+                }
+                Button("Open folder") { actions.openFolder(agents.repoPath) }.buttonStyle(PillButtonStyle())
+            }
+        }
     }
 }
 

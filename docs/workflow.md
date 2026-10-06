@@ -77,6 +77,8 @@ chiefstew status   # the exact JSON Chief Stew will show (contract § 4)
 | `branches` | `branch`: a pattern like `build/{num}-{slug}` or `feature/{slug}` | a local branch matching the pattern |
 | `folders` | `folder`: a pattern like `docs/builds/{num}_{slug}` | a folder on the main checkout matching the pattern |
 
+Folder builds all share the main checkout. Each is read from disk, so uncommitted work shows. Its activity is its own folder's: the last commit that touched it, or a newer file change. A folder is never merged, so say when one is finished with `done` (below): it leaves the list, and a roadmap still shows it. An agent session in the main checkout could be working on any of them, so it isn't put on one: the panel shows Claude working in the repo. A session started inside a build's folder counts for that build.
+
 `builds.folder` (with `worktrees` or `branches`) is where a build's files live, relative to its checkout. It takes `{num}`, `{slug}` and `{branch}`, and its last part may use `*`, e.g. `docs/builds/{num}_*`. Without it, files are read from the checkout's root.
 
 A branch that's merged leaves the list, unless it's still checked out in a worktree. Merged means its commits are in the local main branch (`main`, else `master`) or in origin's default branch as last fetched, or that merging it into origin's would change nothing because its changes went in as a squash or rebase. A brand-new branch looks merged to git, so worktrees always count. A build whose commits are all by someone else (not this clone's `user.email`) is a teammate's: if it's closed but not merged, it's shown for information, not as needing you.
@@ -97,9 +99,11 @@ Every field below says where to read:
 | Field | How it reads | Becomes |
 |---|---|---|
 | `state` | `pick`: `first-line` (the default) or `first-quote` (the first `> ` blockquote); or `match`: a regex (named group `state`, else the first group) | the build's one-line status. Without it, the last commit subject is used. |
+| `title` | like `state` (group `title`) | the build's name, shown after its number in place of the slug, e.g. from a heading `# 012 · Login screen` |
 | `lane` | `match` (group `lane`), with an optional `default` | a route name, used by `phases.skip`. Shown on the build only when the file states it; the `default` picks the route but isn't shown. |
 | `parked` | `state`: a regex on the state line | set aside: tagged parked, listed last, and doesn't need you |
 | `closed` | `state`: a regex on the state line | finished but not merged: needs you |
+| `done` | `state`: a regex on the state line. Only with `folders` | finished: left out of status (a branch is finished when it's merged instead) |
 | `phases` | `list`: `"checkboxes"` (each `- [ ]`/`- [x]` line is a phase), or a regex applied per line with groups `n`, `name`, `done` (`x` or `true` means done), `started`, `doneAt`. Optional `skip: { "lane": "fast", "phases": [2, 3] }`. | the phase dots. The first unfinished phase is active, or the one with a `started` time if your regex captures `started`. |
 | `gates` | `list`: a regex per line with groups `gate`, `status` (words like waiting/open/pending, or approved/passed/done), `at`; or `"checkboxes"` (unticked means waiting). Optional `phase` (gate → phase number), `artefact` (one path template, or gate → path), and `approve` (a command template using `{gate}`, `{num}`, `{slug}`). | gates. A waiting gate **needs you**, with the artefact to open (a read-only copy from git when the build isn't checked out) and the approve command to copy (Chief Stew never runs it). |
 | `budget` | `match`: a regex with named groups `hours` (required) and `label`, e.g. `"^Size: (?<label>\\w+) \\((?<hours>[\\d.]+)h\\)"` | the build's time budget: the row shows elapsed (wall clock from its first phase's start) against it, and one of yours past it gets a quiet notice |
@@ -107,7 +111,7 @@ Every field below says where to read:
 
 Unknown keys are ignored and reported by `chiefstew check`, so a typo never silently does nothing, and a description that uses a key added in a newer Chief Stew still works on an older copy (from v0.2.2), which just doesn't apply that key. Invalid values for keys it knows are still errors.
 
-Dates can be ISO 8601, `YYYY-MM-DD`, or `YYYY-MM-DD HH:MM` (local time).
+Dates can be ISO 8601, `YYYY-MM-DD`, or `YYYY-MM-DD HH:MM` (local time). Write a phase's start with its time: a date alone counts from midnight, so the build's clock is hours off, and `chiefstew check` points it out for a phase under way.
 
 ### When a description isn't enough
 

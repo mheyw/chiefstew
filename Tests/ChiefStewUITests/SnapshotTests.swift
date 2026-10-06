@@ -120,7 +120,27 @@ let states: [(String, Board)] = [
     ),
     ("10-sweep-failed", sweepFailed()),
     ("11-teammates", teammates()),
+    ("12-folder-builds", folderBuilds()),
 ]
+
+/// A repo whose builds are folders on one checkout: the build shows its title and folder, and
+/// Claude working in the checkout is shown for the repo, not guessed onto a build.
+func folderBuilds() -> Board {
+    let path = "/Users/you/research"
+    var row = BuildRow(
+        num: "R07", slug: "07", branch: "main", state: "Research: 2 agents running (started 2026-10-06 09:57)",
+        lastCommitAt: ago(90), worktree: path, phases: phases(["done", "active", "pending", "pending", "pending"]),
+        progress: "\(path)/questions/R07/STATUS.md")
+    row.title = "Search ranking"
+    row.folder = "\(path)/questions/R07"
+    row.changedAt = ago(2)
+    let agent = AgentState(session: "r1", repo: path, path: path, lastEventAt: ago(1), lastKind: "agent.resumed")
+    var claude = ClaudeSessions()
+    claude.update(["r1": .busy], at: ago(5))
+    return Board.make(
+        repos: [RepoSnapshot(path: path, status: StatusReport(builds: [row]), statusAt: ago(0.2))], agents: [agent],
+        claude: claude, now: now)
+}
 
 /// A teammate's build closed but not merged, and one of yours known only from origin.
 func teammates() -> Board {
@@ -199,9 +219,10 @@ let outDir: URL = {
         titles == [
             nil, "173 Implement 6/11 +1", "3 need you", "173 Implement 6/11", "173 Implement 6/11",
             nil, nil, nil, "173 Implement 6/11", "173 Implement 6/11", "173 Implement 6/11 +1",
+            "R07 Requirements",
         ])
     #expect(
-        states.map { $0.1.menu.warning } == [false, false, false, true, true, false, false, true, false, false, false])
+        states.map { $0.1.menu.warning } == [false, false, false, true, true, false, false, true, false, false, false, false])
 }
 
 @Test func approveCommandIsSelfContained() {

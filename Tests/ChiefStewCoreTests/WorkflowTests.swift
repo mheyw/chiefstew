@@ -538,3 +538,57 @@ private func commit(_ dir: URL, as name: String, _ email: String, _ message: Str
     #expect(p.list.map(\.path) == ["workflow.budget.match"])
     #expect(Budget(hours: 0.5).text == "30 min" && Budget(hours: 4).text == "4h" && Budget(hours: 1.5).text == "1h 30m")
 }
+
+/// Folder builds share the main checkout: a finished one leaves status (a folder is never merged),
+/// each reports its own folder and title, and its activity is its own folder's, uncommitted or not.
+@Test func folderBuildsAreDoneTitledAndOwnTheirFolder() throws {
+    let (repo, _) = try sampleRepo()
+    try write(repo, "work/012_login/STATUS.md", "# 012 · Login screen\n\nAccepted in DR-12\n")
+    try write(repo, "work/013_billing/STATUS.md", "# 013 · Billing\n\nResearch: 2 agents running\n")
+    let later = Date().addingTimeInterval(120)
+    try FileManager.default.setAttributes(
+        [.modificationDate: later], ofItemAtPath: repo.appendingPathComponent("work/013_billing/STATUS.md").path)
+    let spec = try WorkflowSpec.parse([
+        "builds": ["from": "folders", "folder": "work/{num}_{slug}"],
+        "state": ["file": "STATUS.md"],
+        "title": ["file": "STATUS.md", "match": "^# \\d+ · (?<title>.+)$"],
+        "done": ["state": "^Accepted"],
+    ]).get()
+    let r = WorkflowEngine(repo: repo.path, spec: spec).runExplained()
+    #expect(r.report.builds.map(\.num) == ["013"])
+    #expect(r.skipped.contains { $0.hasPrefix("012: done") })
+    let row = try #require(r.report.builds.first)
+    #expect(row.title == "Billing")
+    #expect(row.folder == PathMatch.normalize(repo.path) + "/work/013_billing")
+    #expect(row.worktree == PathMatch.normalize(repo.path))
+    #expect(row.behind == nil)
+    #expect(abs((row.changedAt ?? .distantPast).timeIntervalSince(later)) < 1)
+    #expect(row.changedAt! > row.lastCommitAt)
+}
+
+/// A branch is done when it's merged; done but not merged is `closed`, which still needs you.
+@Test func doneIsOnlyForFolderBuilds() {
+    guard case .failure(let p) = WorkflowSpec.parse([
+        "builds": ["from": "branches", "branch": "feature/{slug}"], "done": ["state": "^Done"],
+    ]) else {
+        Issue.record("expected a problem")
+        return
+    }
+    #expect(p.list.map(\.path) == ["workflow.done"])
+}
+
+/// A phase under way that started on a date alone is called out: its clock would count from midnight.
+@Test func checkCallsOutAStartWithADateOnly() throws {
+    let (repo, _) = try sampleRepo()
+    let list = "^- \\[(?<done>[ x])\\] (?<n>\\d)\\. (?<name>\\w+)(?: \\(started (?<started>[\\d: -]+?)(?: → (?<doneAt>[\\d: -]+))?\\))?$"
+    try write(repo, "work/012_login/STATUS.md", "- [x] 1. Draft (started 2026-10-05 → 2026-10-05)\n- [ ] 2. Build (started 2026-10-06)\n")
+    try write(repo, "work/013_billing/STATUS.md", "- [ ] 1. Draft (started 2026-10-06 09:10)\n")
+    let spec = try WorkflowSpec.parse([
+        "builds": ["from": "folders", "folder": "work/{num}_{slug}"],
+        "phases": ["file": "STATUS.md", "list": list],
+    ]).get()
+    let notes = WorkflowEngine(repo: repo.path, spec: spec).run().diagnostics.map { $0.notes.first { $0.field == "phases" }!.detail }
+    #expect(notes[0].contains("Build started with a date only"))
+    #expect(!notes[0].contains("Draft started"))  // done: nothing to fix now
+    #expect(!notes[1].contains("date only"))
+}

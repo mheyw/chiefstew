@@ -87,6 +87,14 @@ public struct BuildRow: Decodable, Sendable, Equatable {
     public var branchURL: String?
     /// How long the build is meant to take, wall clock from its first phase's start.
     public var budget: Budget?
+    /// A human name, shown in place of the slug.
+    public var title: String?
+    /// The build's own folder, when it's a folder inside a checkout that other builds share
+    /// rather than a checkout of its own. Agents in the shared checkout aren't matched to it.
+    public var folder: String?
+    /// The newest change to the build's files, committed or not, when that's later than its
+    /// last commit (a folder build's uncommitted work).
+    public var changedAt: Date?
 
     public init(
         num: String, slug: String, branch: String = "", state: String = "",
@@ -115,7 +123,8 @@ public struct BuildRow: Decodable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case num, slug, branch, state, lastCommitAt, merged, worktree, worktrees, behind, flags, lane,
-            phases, gates, tasks, urls, progress, parked, author, mine, onlyOnOrigin, branchURL, budget
+            phases, gates, tasks, urls, progress, parked, author, mine, onlyOnOrigin, branchURL, budget,
+            title, folder, changedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -142,6 +151,9 @@ public struct BuildRow: Decodable, Sendable, Equatable {
         onlyOnOrigin = c.lenient(Bool.self, .onlyOnOrigin)
         branchURL = c.lenient(String.self, .branchURL)
         budget = c.lenient(Budget.self, .budget).flatMap { $0.hours > 0 ? $0 : nil }
+        title = c.lenient(String.self, .title).flatMap { $0.isEmpty ? nil : $0 }
+        folder = c.lenient(String.self, .folder)
+        changedAt = c.lenient(FlexibleDate.self, .changedAt)?.date
     }
 
     public var isParked: Bool {
@@ -180,6 +192,8 @@ public struct PhaseInfo: Decodable, Sendable, Equatable {
     public var doneAt: Date?
     /// Not part of this build's route (e.g. a shorter lane skipping phases); hidden.
     public var skipped: Bool?
+    /// The start was written as a day (`2026-10-06`), so `startedAt` is midnight, not the time.
+    public var startedDateOnly = false
 
     public init(
         n: Int, name: String, status: String, startedAt: Date? = nil, doneAt: Date? = nil,
@@ -201,6 +215,7 @@ public struct PhaseInfo: Decodable, Sendable, Equatable {
         name = try c.decode(String.self, forKey: .name)
         status = try c.decode(String.self, forKey: .status)
         startedAt = c.lenient(FlexibleDate.self, .startedAt)?.date
+        startedDateOnly = c.lenient(String.self, .startedAt).map(LooseDate.isDateOnly) ?? false
         doneAt = c.lenient(FlexibleDate.self, .doneAt)?.date
         skipped = c.lenient(Bool.self, .skipped)
     }

@@ -22,6 +22,11 @@ public enum LooseDate {
         }
         return nil
     }
+
+    /// `2026-10-06`, with no time of day: it parses as local midnight, which isn't when it was.
+    public static func isDateOnly(_ s: String) -> Bool {
+        s.trimmingCharacters(in: .whitespaces).range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+    }
 }
 
 /// A date field that may be an ISO string or unix seconds.
@@ -56,5 +61,13 @@ public enum Durations {
     public static func ago(_ seconds: TimeInterval) -> String {
         let text = short(seconds)
         return text == "just now" ? text : "\(text) ago"
+    }
+
+    /// `since 6 Oct` (with the year if it isn't this one): for a start known only by its day.
+    public static func sinceDay(_ day: Date, now: Date, locale: Locale = .current) -> String {
+        let cal = Calendar.current
+        var style = Date.FormatStyle(locale: locale).day().month(.abbreviated)
+        if cal.component(.year, from: day) != cal.component(.year, from: now) { style = style.year() }
+        return "since \(day.formatted(style))"
     }
 }

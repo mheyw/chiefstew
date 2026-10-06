@@ -357,3 +357,67 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     #expect(AgentState.displayName("aider") == "Aider")
     #expect(AgentState.displayName(nil) == "Agent")
 }
+
+/// Folder builds share one checkout: a session there could be on any of them, so it's on none,
+/// and shows as working in the repo. A session in a build's own folder is that build's.
+@Test func sessionsInASharedCheckoutAreOnNoBuild() {
+    let rows = [
+        BuildRow(num: "R01", slug: "01", branch: "main", lastCommitAt: now, worktree: "/r"),
+        BuildRow(num: "R02", slug: "02", branch: "main", lastCommitAt: now, worktree: "/r"),
+    ].enumerated().map { i, r in
+        var r = r
+        r.folder = "/r/questions/R0\(i + 1)"
+        return r
+    }
+    let atRoot = AgentState(session: "a", repo: "/r", path: "/r", lastEventAt: now, lastKind: "agent.resumed")
+    let inFolder = AgentState(
+        session: "b", repo: "/r", path: "/r/questions/R02", lastEventAt: now, lastKind: "agent.resumed")
+    var claude = ClaudeSessions()
+    claude.update(["a": .busy, "b": .busy], at: now)
+    let b = Board.make(
+        repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: rows))], agents: [atRoot, inFolder],
+        claude: claude, now: now)
+    #expect(b.inProgress.first { $0.num == "R01" }?.agentLine == nil)
+    #expect(b.inProgress.first { $0.num == "R02" }?.agentLine == "Claude working")
+    #expect(b.inProgress.first { $0.num == "R01" }?.folder == "/r/questions/R01")
+    #expect(b.agentsWorking == [RepoAgents(repoPath: "/r", repoName: "r", sessions: ["a"])])
+    // "R01 01" says the number twice.
+    #expect(b.inProgress.map(\.slug) == ["", ""])
+}
+
+/// Two builds reporting the same checkout can't say which one a session is on.
+@Test func aCheckoutTwoBuildsReportIsOnNeither() {
+    let rows = [
+        BuildRow(num: "1", slug: "a", lastCommitAt: now, worktree: "/r"),
+        BuildRow(num: "2", slug: "b", lastCommitAt: now, worktree: "/r"),
+    ]
+    let agent = AgentState(session: "s", repo: "/r", path: "/r", lastEventAt: now, lastKind: "agent.stopped")
+    var claude = ClaudeSessions()
+    claude.update(["s": .idle], at: now)
+    let b = Board.make(
+        repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: rows))], agents: [agent], claude: claude,
+        now: now)
+    #expect(b.inProgress.allSatisfy { $0.agentLine == nil })
+    #expect(b.agentsWorking.isEmpty)  // idle: nothing to say
+}
+
+/// Only Claude Code's session list says a session is working; without it, nothing is said.
+@Test func aSessionOutsideAnyBuildIsWorkingOnlyIfClaudeSaysSo() {
+    let agent = AgentState(session: "s", repo: "/r", path: "/r", lastEventAt: now, lastKind: "agent.resumed")
+    let repos = [RepoSnapshot(path: "/r", status: StatusReport(builds: []))]
+    #expect(Board.make(repos: repos, agents: [agent], now: now).agentsWorking.isEmpty)
+    var claude = ClaudeSessions()
+    claude.update(["s": .busy], at: now)
+    let b = Board.make(repos: repos, agents: [agent], claude: claude, now: now)
+    #expect(b.header == "Claude working")
+    #expect(b.menu.busy)
+    // A repo that isn't registered isn't shown.
+    #expect(Board.make(repos: [], agents: [agent], claude: claude, now: now).agentsWorking.isEmpty)
+}
+
+@Test func aTitleIsShownInPlaceOfTheSlug() {
+    var row = BuildRow(num: "R07", slug: "07", lastCommitAt: now)
+    row.title = "Search ranking"
+    #expect(Board.displayName(row) == "Search ranking")
+    #expect(Board.displayName(BuildRow(num: "012", slug: "login", lastCommitAt: now)) == "login")
+}

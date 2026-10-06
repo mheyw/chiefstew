@@ -77,7 +77,7 @@ public enum WorkflowCheck {
                     found[note.field] = f
                 }
             }
-            let order = ["folder", "state", "lane", "phases", "gates", "tasks"]
+            let order = ["folder", "state", "title", "lane", "phases", "gates", "tasks"]
             let never = order.filter { found[$0].map { $0.yes == 0 } ?? false }
             lines.append("")
             if n == 0 {

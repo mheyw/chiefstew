@@ -59,9 +59,14 @@ public struct WorkflowSpec: Sendable, Equatable {
     public static let recentRemoteDays = 30
     public var folder: String?
     public var state: TextRule?
+    /// The build's human name (a heading, say), shown in place of its slug.
+    public var title: TextRule?
     public var lane: TextRule?
     public var parked: String?
     public var closed: String?
+    /// Folder builds only: finished. A folder is never merged, so this is what takes it out of
+    /// status (contract § 4b: builds in flight only); a roadmap still lists it.
+    public var done: String?
     public var phases: ListRule?
     public var skip: (lane: String, phases: [Int])?
     public var gates: GateRule?
@@ -76,7 +81,8 @@ public struct WorkflowSpec: Sendable, Equatable {
 
     public static func == (a: WorkflowSpec, b: WorkflowSpec) -> Bool {
         a.builds == b.builds && a.includeRemote == b.includeRemote && a.folder == b.folder && a.state == b.state && a.lane == b.lane
-            && a.parked == b.parked && a.closed == b.closed && a.phases == b.phases
+            && a.title == b.title && a.parked == b.parked && a.closed == b.closed && a.done == b.done
+            && a.phases == b.phases
             && a.skip?.lane == b.skip?.lane && a.skip?.phases == b.skip?.phases && a.gates == b.gates
             && a.tasks == b.tasks && a.tasksPhases == b.tasksPhases && a.budget == b.budget
     }
@@ -105,7 +111,9 @@ public struct WorkflowSpec: Sendable, Equatable {
         guard let w = any as? [String: Any] else {
             return .failure(Problems(list: [Problem(path: "workflow", message: "must be an object")]))
         }
-        let known: Set<String> = ["builds", "folder", "state", "lane", "parked", "closed", "phases", "gates", "tasks", "budget"]
+        let known: Set<String> = [
+            "builds", "folder", "state", "title", "lane", "parked", "closed", "done", "phases", "gates", "tasks", "budget",
+        ]
         for key in w.keys.sorted() where !known.contains(key) {
             unknown("workflow.\(key)", known)
         }
@@ -135,8 +143,9 @@ public struct WorkflowSpec: Sendable, Equatable {
         let allowed: [String: Set<String>] = [
             "builds": ["from", "branch", "folder", "remote"],
             "state": ["file", "section", "pick", "match", "default"],
+            "title": ["file", "section", "pick", "match"],
             "lane": ["file", "section", "pick", "match", "default"],
-            "parked": ["state"], "closed": ["state"],
+            "parked": ["state"], "closed": ["state"], "done": ["state"],
             "phases": ["file", "section", "list", "skip"],
             "gates": ["file", "section", "list", "phase", "artefact", "approve"],
             "tasks": ["file", "section", "count", "phase"],
@@ -210,6 +219,14 @@ public struct WorkflowSpec: Sendable, Equatable {
         spec.lane = textRule("lane")
         spec.parked = stateRegex("parked")
         spec.closed = stateRegex("closed")
+        if w["title"] != nil { spec.title = textRule("title") }
+        if w["done"] != nil, let re = stateRegex("done") {
+            // A branch or worktree is finished when it's merged; one that's done but not merged
+            // still needs its owner, which is what `closed` says.
+            if case .folders = spec.builds { spec.done = re } else if builds != nil {
+                fail("workflow.done", "only for builds from folders; a branch is done when it's merged (use closed for done but not merged)")
+            }
+        }
         if let o = object("phases"), let at = locator(o, "workflow.phases"),
             let list = listKind(o, "workflow.phases")
         {

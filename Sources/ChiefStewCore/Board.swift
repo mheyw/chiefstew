@@ -63,6 +63,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     public var tasks: TaskCount?
     public var state: String
     public var startedAt: Date?
+    /// The start was written as a day only: shown as "since 6 Oct", never as hours elapsed.
+    public var startedDateOnly = false
     public var lastActivity: Date
     /// `Claude working`, `Claude idle 9 min`, from Claude Code's own session status; nil when
     /// that isn't known.
@@ -70,6 +72,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     public var behind: Int?
     public var flags: [String]
     public var worktree: String?
+    /// The build's own folder inside a shared checkout (a folder build): what "Open folder" opens.
+    public var folder: String?
     public var progress: String?
     public var url: String?
     /// The repo's last status call failed; this is the last good data.
@@ -99,7 +103,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// Elapsed against the budget, for a build that has one, has started, and is neither parked
     /// nor closed (a closed build's clock has stopped, and Chief Stew doesn't know when).
     public func budgetClock(now: Date) -> (elapsed: TimeInterval, budget: TimeInterval)? {
-        guard let budget, let startedAt, !parked, !flags.contains("closed-unmerged") else { return nil }
+        // A day alone can't time a budget: midnight would put it hours over.
+        guard let budget, let startedAt, !startedDateOnly, !parked, !flags.contains("closed-unmerged") else { return nil }
         return (now.timeIntervalSince(startedAt), budget.hours * 3600)
     }
 
@@ -137,6 +142,20 @@ public struct NeedsItem: Sendable, Equatable, Identifiable {
         case .agent(_, let name): return card == nil ? "\(name) waiting" : "\(num)\(name)"
         case .unmerged: return "\(num)not merged"
         }
+    }
+}
+
+/// Agent sessions working in a registered repo that aren't on one build: in its main checkout,
+/// or in a checkout several builds share, where Chief Stew can't tell which build it's on.
+public struct RepoAgents: Sendable, Equatable, Identifiable {
+    public var id: String { repoPath }
+    public var repoPath: String
+    public var repoName: String
+    /// The busy sessions (Claude Code's: only its session list says one is working), newest first.
+    public var sessions: [String]
+
+    public var line: String {
+        sessions.count == 1 ? "Claude working" : "\(sessions.count) Claude sessions working"
     }
 }
 
@@ -179,6 +198,8 @@ public struct Board: Sendable, Equatable {
     /// A teammate's build that's closed but not merged: worth knowing, not yours to act on.
     public var team: [NeedsItem] = []
     public var inProgress: [BuildCard] = []
+    /// Agents working in a repo but not on one build: shown under In progress, after the builds.
+    public var agentsWorking: [RepoAgents] = []
     public var leftBehind: [LeftItem] = []
     public var leftNotes: [String] = []
     /// The sweep's `cleanup` commands: shown to copy, never run.
@@ -211,6 +232,7 @@ public struct Board: Sendable, Equatable {
         if !problems.isEmpty {
             parts.append(problems.count == 1 ? "1 repo stale" : "\(problems.count) repos stale")
         }
+        if parts.isEmpty, !agentsWorking.isEmpty { return agentsWorking.count == 1 ? agentsWorking[0].line : "Agents working" }
         if parts.isEmpty { return loading.isEmpty ? "Nothing in flight" : "Checking…" }
         return parts.joined(separator: " · ")
     }
@@ -232,7 +254,8 @@ public struct Board: Sendable, Equatable {
         let active = active
         guard let top = active.first else {
             return .init(
-                title: nil, attention: false, warning: warning, unreadable: unreadable, loading: loading)
+                title: nil, attention: false, warning: warning, busy: !agentsWorking.isEmpty,
+                unreadable: unreadable, loading: loading)
         }
         var title = top.num
         if let label = top.phaseLabel { title += " \(label)" }
@@ -272,18 +295,22 @@ extension Board {
                 let same = rows.filter { $0.num == row.num }
                 // Prefer the row whose branch carries the build's ID.
                 let primary = same.first { $0.branch.contains(row.num) } ?? same[0]
-                builds.append((repo, primary, same.compactMap(\.worktree) + same.flatMap(\.worktrees)))
+                // A folder build shares its checkout with the others: only its own folder is its.
+                let places = same.compactMap { $0.folder ?? $0.worktree } + same.flatMap(\.worktrees)
+                builds.append((repo, primary, places))
             }
         }
 
         // Each agent session belongs to the build whose checkout it runs in. The emitter sends
         // the checkout root, so this is an exact match (contract § 3.3), not a prefix match:
-        // nested worktrees under .claude/worktrees are separate checkouts.
+        // nested worktrees under .claude/worktrees are separate checkouts. A checkout two builds
+        // report can't say which one a session is on, so it's on neither.
         var sessionsByBuild: [String: [AgentState]] = [:]
         var loose: [AgentState] = []
         for agent in agents {
             let target = PathMatch.normalize(agent.path)
-            if let b = builds.first(where: { $0.paths.contains { PathMatch.normalize($0) == target } }) {
+            let matches = builds.filter { $0.paths.contains { PathMatch.normalize($0) == target } }
+            if matches.count == 1, let b = matches.first {
                 sessionsByBuild[cardID(b.repo, b.row), default: []].append(agent)
             } else {
                 loose.append(agent)
@@ -329,6 +356,20 @@ extension Board {
             }
             if !needBuilds.contains(id) { board.inProgress.append(card) }
         }
+        // Working sessions that aren't on one build, per registered repo. Only Claude Code's own
+        // session list can say a session is working; without it, nothing is said.
+        var working: [String: (repo: RepoSnapshot, agents: [AgentState])] = [:]
+        for agent in loose where agent.needsInput == nil && claude?.sessions[agent.session]?.status == .busy {
+            let path = PathMatch.normalize(agent.repo)
+            guard let repo = repos.first(where: { PathMatch.normalize($0.path) == path }) else { continue }
+            working[repo.path, default: (repo, [])].agents.append(agent)
+        }
+        board.agentsWorking = working.values.map { w in
+            RepoAgents(
+                repoPath: w.repo.path, repoName: w.repo.name,
+                sessions: w.agents.sorted { $0.lastEventAt > $1.lastEventAt }.map(\.session))
+        }.sorted { ($0.repoName, $0.repoPath) < ($1.repoName, $1.repoPath) }
+
         for agent in loose {
             guard let n = agent.needsInput else { continue }
             board.needsYou.append(
@@ -392,6 +433,13 @@ extension Board {
         "\(repo.path)#\(row.num)"
     }
 
+    /// What a build is called after its number: its title, else its slug, unless the slug only
+    /// repeats the number ("R07" from folder `R07` with slug `07`).
+    static func displayName(_ row: BuildRow) -> String {
+        if let title = row.title { return title }
+        return row.slug != row.num && row.num.hasSuffix(row.slug) ? "" : row.slug
+    }
+
     static func makeCard(
         repo: RepoSnapshot, row: BuildRow, agents: [AgentState], claude: ClaudeSessions?, now: Date
     ) -> BuildCard
@@ -421,6 +469,7 @@ extension Board {
             }
         }
 
+        let first = row.phases?.first { $0.n == 1 }
         let latest = agents.max { $0.lastEventAt < $1.lastEventAt }
         let live = claude.map { c in agents.compactMap { c.sessions[$0.session] } } ?? []
         let busy = live.filter { $0.status == .busy }.count
@@ -437,12 +486,12 @@ extension Board {
         }
 
         return BuildCard(
-            id: cardID(repo, row), repoName: repo.name, num: row.num, slug: row.slug,
+            id: cardID(repo, row), repoName: repo.name, num: row.num, slug: displayName(row),
             // None ticked reads as progress that isn't happening (a plan still being written).
             lane: row.lane, dots: dots, phaseLabel: label, tasks: row.tasks.flatMap { $0.done > 0 ? $0 : nil },
-            state: row.state, startedAt: row.phases?.first(where: { $0.n == 1 })?.startedAt,
-            lastActivity: max(row.lastCommitAt, latest?.lastEventAt ?? .distantPast),
-            agentLine: agentLine, behind: row.behind, flags: row.flags, worktree: row.worktree,
+            state: row.state, startedAt: first?.startedAt, startedDateOnly: first?.startedDateOnly ?? false,
+            lastActivity: max(row.lastCommitAt, row.changedAt ?? .distantPast, latest?.lastEventAt ?? .distantPast),
+            agentLine: agentLine, behind: row.behind, flags: row.flags, worktree: row.worktree, folder: row.folder,
             progress: row.progress, url: row.urls["admin"] ?? row.urls.values.sorted().first,
             staleSince: repo.statusError?.since,
             parked: row.isParked,

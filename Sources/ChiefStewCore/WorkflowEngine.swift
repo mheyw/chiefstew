@@ -130,8 +130,9 @@ struct GitReader: Sendable {
         return (try? FileManager.default.attributesOfItem(atPath: head))?[.modificationDate] as? Date
     }
 
-    func lastCommit(_ ref: String) -> (date: Date, subject: String)? {
-        guard let out = run(["log", "-1", "--format=%ct%x00%s", ref]) else { return nil }
+    /// The newest commit on `ref`, or the newest that touched `path` on it.
+    func lastCommit(_ ref: String, path: String? = nil) -> (date: Date, subject: String)? {
+        guard let out = run(["log", "-1", "--format=%ct%x00%s", ref] + (path.map { ["--", $0] } ?? [])) else { return nil }
         let parts = out.trimmingCharacters(in: .newlines).components(separatedBy: "\u{0}")
         guard let t = parts.first.flatMap(Double.init) else { return nil }
         return (Date(timeIntervalSince1970: t), parts.count > 1 ? parts[1] : "")
@@ -207,6 +208,11 @@ public struct WorkflowEngine: Sendable {
         var diagnostics: [BuildDiagnostics] = []
         for c in candidates(main: main, upstream: upstream, worktrees: worktrees, skipped: &skipped) {
             let (row, notes) = build(c, main: main, upstream: upstream, who: who, now: now)
+            // A finished folder stays on disk; it's no longer in flight (the roadmap still lists it).
+            if let re = spec.done, Self.matches(re, row.state) {
+                skipped.append("\(c.num): done (\"\(String(row.state.prefix(50)))\" matches workflow.done)")
+                continue
+            }
             rows.append(row)
             diagnostics.append(BuildDiagnostics(num: c.num, slug: c.slug, source: source(c), notes: notes))
         }
@@ -216,6 +222,9 @@ public struct WorkflowEngine: Sendable {
     }
 
     private func source(_ c: Candidate) -> String {
+        if case .folders = spec.builds, let wt = c.worktree, let f = folderFor(c, pattern: pattern(spec.builds)) {
+            return "\(c.branch) · \(PathMatch.relative((wt as NSString).appendingPathComponent(f), to: repo))"
+        }
         if let wt = c.worktree { return "\(c.branch) · \(PathMatch.relative(wt, to: repo) == wt ? wt : PathMatch.relative(wt, to: repo))" }
         return "\(c.branch) · not checked out (read from git)"
     }
@@ -364,11 +373,22 @@ public struct WorkflowEngine: Sendable {
             }
         }
 
-        let last = git.lastCommit(c.ref)
+        // A folder build shares its checkout with the others: its activity is its own folder's,
+        // and it's never behind the branch it's on.
+        var isFolder = false
+        if case .folders = spec.builds { isFolder = true }
+        let last = git.lastCommit(c.ref, path: isFolder ? base : nil)
+        var changed: Date?
+        if isFolder, let wt = c.worktree { changed = Self.newestChange((wt as NSString).appendingPathComponent(base)) }
         var row = BuildRow(
-            num: c.num, slug: c.slug, branch: c.branch, state: "", lastCommitAt: last?.date ?? now,
-            merged: false, worktree: c.worktree, behind: git.behind(c.ref, upstream ?? main))
+            num: c.num, slug: c.slug, branch: c.branch, state: "",
+            lastCommitAt: last?.date ?? git.lastCommit(c.ref)?.date ?? now,
+            merged: false, worktree: c.worktree, behind: isFolder ? nil : git.behind(c.ref, upstream ?? main))
         row.worktrees = c.extraWorktrees
+        if isFolder, let wt = c.worktree {
+            row.folder = (wt as NSString).appendingPathComponent(base)
+            if let changed, changed > row.lastCommitAt { row.changedAt = changed }
+        }
         if c.ref != main {
             let authors = git.authors(c.ref, since: upstream ?? main)
             row.author = authors.latest
@@ -396,6 +416,18 @@ public struct WorkflowEngine: Sendable {
             row.state = Self.plain(last?.subject ?? "")
         }
 
+        // title
+        if let rule = spec.title {
+            let (text, file, why, _) = read(rule.at, base: base, c)
+            if let text, let value = Self.extract(text, pick: rule.pick, match: rule.match, group: "title") {
+                let title = Self.plain(value)
+                row.title = title.isEmpty ? nil : title
+                note("title", row.title != nil, "\(file ?? "") → \"\(row.title ?? "")\"")
+            } else {
+                note("title", false, why ?? "\(file ?? "file") matched nothing; showing the slug")
+            }
+        }
+
         // lane, parked, closed. The default picks the route but isn't reported: it's an
         // assumption, not something the repo says.
         var route: String?
@@ -420,8 +452,16 @@ public struct WorkflowEngine: Sendable {
                     }
                 }
                 row.phases = phases.isEmpty ? nil : phases
-                note("phases", !phases.isEmpty, phases.isEmpty ? "\(file ?? "") has no lines matching the list rule"
-                    : "\(file ?? "") → " + phases.map { "\($0.name) \(Self.mark($0.status))" }.joined(separator: " "))
+                var detail = phases.isEmpty ? "\(file ?? "") has no lines matching the list rule"
+                    : "\(file ?? "") → " + phases.map { "\($0.name) \(Self.mark($0.status))" }.joined(separator: " ")
+                // A start with a date only reads as midnight: the build's clock would be hours off.
+                let dateOnly = Self.records(text, rule.list).enumerated().filter { i, r in
+                    i < phases.count && phases[i].status == "active" && r["started"].map(LooseDate.isDateOnly) == true
+                }.map { phases[$0.offset].name }
+                if !dateOnly.isEmpty {
+                    detail += "; \(dateOnly.joined(separator: ", ")) started with a date only, so its clock counts from midnight: write the time too (2026-10-06 09:10)"
+                }
+                note("phases", !phases.isEmpty, detail)
             } else {
                 note("phases", false, why ?? "not found")
             }
@@ -556,6 +596,11 @@ public struct WorkflowEngine: Sendable {
             names = git.list(c.ref, parent)
         }
         return names.sorted().first { Self.matches(regex, $0) }.map { (parent as NSString).appendingPathComponent($0) }
+    }
+
+    private func pattern(_ b: WorkflowSpec.Builds) -> String {
+        if case .folders(let p) = b { return p }
+        return ""
     }
 
     private func folderFor(_ c: Candidate, pattern: String) -> String? {
@@ -747,11 +792,36 @@ public struct WorkflowEngine: Sendable {
                 }
                 firstOpenSeen = true
             }
-            return PhaseInfo(
+            var phase = PhaseInfo(
                 n: r["n"].flatMap(Int.init) ?? i + 1,
                 name: (r["name"] ?? "Phase \(i + 1)").trimmingCharacters(in: .whitespaces),
                 status: status, startedAt: started, doneAt: r["doneAt"].flatMap(LooseDate.parse))
+            phase.startedDateOnly = started != nil && r["started"].map(LooseDate.isDateOnly) == true
+            return phase
         }
+    }
+
+    /// The newest modification time of anything in `folder`, hidden files and dependency
+    /// folders aside. Bounded, so a huge folder can't slow a status poll.
+    static func newestChange(_ folder: String, limit: Int = 5000) -> Date? {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isDirectoryKey]
+        guard let e = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: folder), includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return nil }
+        var newest = (try? URL(fileURLWithPath: folder).resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        var seen = 0
+        for case let url as URL in e {
+            seen += 1
+            if seen > limit { break }
+            guard let v = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+            if v.isDirectory == true, ["node_modules", ".build", "build", "dist"].contains(url.lastPathComponent) {
+                e.skipDescendants()
+            }
+            if let d = v.contentModificationDate, d > (newest ?? .distantPast) { newest = d }
+        }
+        return newest
     }
 
     static func mark(_ status: String) -> String { status == "done" ? "✓" : status == "active" ? "◐" : "○" }

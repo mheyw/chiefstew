@@ -17,7 +17,7 @@ A repo can do any subset:
 
 | Repo provides | Owner sees |
 |---|---|
-| Nothing | Its agents: which session is asking a question or needs permission (from Chief Stew's own Claude Code hooks), and which is working or idle (from Claude Code's own session list). |
+| Nothing | Its agents: which session is asking a question or needs permission (from Chief Stew's own Claude Code hooks), and which is working (from Claude Code's own session list). |
 | A status command | Its builds as well: phases, gates waiting for sign-off, tasks, parked and unmerged work |
 | A sweep command | Leftovers too: leaked databases, stray processes and routes |
 | Events from its scripts | Gates and phase changes appear at once, not at the next poll |
@@ -126,7 +126,7 @@ Status knows nothing about agent sessions, so Chief Stew keeps a small per-`sess
 - `agent.ended` removes the session.
 - A needs-input record older than 8 h expires, and a session with no events for 24 h is forgotten.
 - Agent state is saved to `…/agents.json`, so it survives a relaunch or an update.
-- A session belongs to a build when its `worktree` (or `repo`) **equals** that build's checkout (a status row's `worktree`). Rows that share a build ID count as one build with several checkouts. Otherwise the session shows as "Claude in `<folder name>`".
+- A session belongs to a build when its `worktree` (or `repo`) **equals** that build's checkout (a status row's `worktree`), or its own `folder` for a build that has one. Rows that share a build ID count as one build with several checkouts. A checkout that two builds report belongs to neither, since it can't say which one a session is on. Otherwise the session shows as "Claude in `<folder name>`": when it needs input, or, in a registered repo, while Claude Code says it's working.
 
 ### 3.4 Chief Stew's reading rules
 
@@ -220,7 +220,7 @@ The status command prints one JSON object to stdout and nothing else:
 | `flags` | no | `closed-unmerged` (finished but not merged: **needs you**, or, for a teammate's build, shown under Teammates with one quiet notice), `idle`, `behind`. |
 | `lane` | no | A repo-defined route. |
 | `parked` | no | `true`: set aside on purpose. It's dimmed, never in the menu bar, and its gates and merges don't need you. If absent, a `state` starting with "Parked" counts. |
-| `phases` | no | In order. `status` is `done`, `active` or `pending`. `skipped: true` hides a phase that isn't on this build's route. Times can be ISO, `YYYY-MM-DD` or local `YYYY-MM-DD HH:MM`. |
+| `phases` | no | In order. `status` is `done`, `active` or `pending`. `skipped: true` hides a phase that isn't on this build's route. Times can be ISO, `YYYY-MM-DD` or local `YYYY-MM-DD HH:MM`. A first phase started on a day alone is shown as that day ("since 6 Oct"), not as hours since midnight, and can't time a `budget`. |
 | `gates` | no | `status` is `waiting` or `approved`. `at` is when it started waiting (shown as "waiting 12 min"). `phase` is the phase the gate signs off, and its dot turns orange. `artefact` is the file to review; it opens in its default app, and anything executable is only revealed in Finder. `artefactRef` (`ref:path`) names it in git when it isn't on disk; Chief Stew opens a read-only copy. `approve` is the command that signs it off; it's copied, never run. |
 | `tasks` | no | `done` / `total`. |
 | `urls` | no | Name → URL; the first is offered as "Open app". |
@@ -229,6 +229,9 @@ The status command prints one JSON object to stdout and nothing else:
 | `mine` | no | `true` if this clone's git user (`user.email`) wrote any of the build's commits, `false` if not. Absent when that can't be told; the build then counts as yours. |
 | `onlyOnOrigin` | no | `true`: the branch exists only on origin, so there's nothing checked out here. |
 | `branchURL` | no | The branch's web page, offered as "Open on GitHub" when there's no checkout. |
+| `title` | no | The build's name, shown after `num` in place of `slug`. |
+| `folder` | no | The build's own folder, when the build is a folder inside a checkout that other builds share rather than a checkout of its own. Agent sessions in the shared checkout aren't matched to it (§ 3.3); one in this folder is. "Open folder" opens it. |
+| `changedAt` | no | The newest change to the build's files, committed or not, when it's later than `lastCommitAt`. Used for its last activity. |
 | `budget` | no | `{ "hours": 2, "label": "L" }`: how long the build is meant to take, wall clock from its first phase's start. Shown as elapsed against it (`L · 1h 10m of 2h`, then `over by 35 min`), except for a parked or closed build. Once one of yours is over, it gets one quiet notice. `label` is optional. |
 
 Anything optional can be left out: a row with only the required fields still shows. A row that fails to decode is skipped and counted, and never takes down the rest.

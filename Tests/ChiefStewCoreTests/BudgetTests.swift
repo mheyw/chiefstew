@@ -62,3 +62,31 @@ private func board(_ rows: [BuildRow], at now: Date) -> Board {
     off.notifyBudget = false
     #expect(NotificationPlanner.plan(board: over, ledger: NoticeLedger(), settings: off, now: now, loaded: [repo]).post.isEmpty)
 }
+
+/// A start written as a day is midnight to the parser, not when it began: it's shown as the day,
+/// survives `chiefstew status` as a day, and never times a budget.
+@Test func aStartKnownOnlyByItsDayIsShownAsTheDay() throws {
+    #expect(LooseDate.isDateOnly("2026-10-06"))
+    #expect(!LooseDate.isDateOnly("2026-10-06 09:10"))
+    #expect(!LooseDate.isDateOnly("2026-10-06T09:10:00Z"))
+
+    let phases = WorkflowEngine.phases(
+        "- [ ] 1. Draft (started 2026-10-06)\n- [ ] 2. Build (started 2026-10-06 09:10)\n",
+        .regex("^- \\[(?<done>[ x])\\] (?<n>\\d)\\. (?<name>\\w+) \\(started (?<started>[\\d: -]+)\\)$"))
+    #expect(phases.map(\.startedDateOnly) == [true, false])
+
+    var row = BuildRow(num: "012", slug: "a", lastCommitAt: Date(), phases: phases)
+    row.budget = Budget(hours: 1)
+    let json = try JSONSerialization.data(withJSONObject: StatusJSON.encode(StatusReport(builds: [row])))
+    let back = try JSONDecoder().decode(StatusReport.self, from: json)
+    #expect(back.builds[0].phases?.map(\.startedDateOnly) == [true, false])
+
+    let now = try #require(LooseDate.parse("2026-10-06 23:00"))
+    let card = try #require(
+        Board.make(repos: [RepoSnapshot(path: "/r", status: back)], agents: [], now: now).inProgress.first)
+    #expect(card.startedDateOnly)
+    #expect(card.budgetClock(now: now) == nil)
+    #expect(Durations.sinceDay(card.startedAt!, now: now, locale: Locale(identifier: "en_GB")) == "since 6 Oct")
+    let nextYear = now.addingTimeInterval(400 * 86400)
+    #expect(Durations.sinceDay(card.startedAt!, now: nextYear, locale: Locale(identifier: "en_GB")) == "since 6 Oct 2026")
+}

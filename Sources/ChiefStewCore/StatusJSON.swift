@@ -5,6 +5,13 @@ import Foundation
 public enum StatusJSON {
     public static func encode(_ report: StatusReport, now: Date = Date()) -> [String: Any] {
         let iso = ISO8601DateFormatter()
+        // A start known only by its day stays a day: midnight would claim a time nobody wrote.
+        func day(_ d: Date) -> String {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: d)
+        }
         var out: [String: Any] = ["v": 1, "generatedAt": iso.string(from: now)]
         if let repo = report.repo { out["repo"] = repo }
         if let t = report.fetchedAt { out["fetchedAt"] = iso.string(from: t) }
@@ -27,7 +34,7 @@ public enum StatusJSON {
             if let phases = b.phases {
                 row["phases"] = phases.map { p -> [String: Any] in
                     var d: [String: Any] = ["n": p.n, "name": p.name, "status": p.status]
-                    if let t = p.startedAt { d["startedAt"] = iso.string(from: t) }
+                    if let t = p.startedAt { d["startedAt"] = p.startedDateOnly ? day(t) : iso.string(from: t) }
                     if let t = p.doneAt { d["doneAt"] = iso.string(from: t) }
                     if let s = p.skipped { d["skipped"] = s }
                     return d
@@ -51,6 +58,9 @@ public enum StatusJSON {
             if let v = b.mine { row["mine"] = v }
             if let v = b.onlyOnOrigin { row["onlyOnOrigin"] = v }
             if let v = b.branchURL { row["branchURL"] = v }
+            if let v = b.title { row["title"] = v }
+            if let v = b.folder { row["folder"] = v }
+            if let t = b.changedAt { row["changedAt"] = iso.string(from: t) }
             return row
         }
         return out

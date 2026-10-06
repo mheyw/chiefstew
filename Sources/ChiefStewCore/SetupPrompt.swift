@@ -52,9 +52,11 @@ public enum SetupPrompt {
             6. Leave everything uncommitted, so the owner can review it. Tell them what you described, anything you added, and show the final `check` output.
 
             Notes:
+            - If phases record when they start, the start needs a time as well as a date (`2026-10-06 09:10`): a date alone counts from midnight, so the build's clock is hours off. If the repo writes dates only, tell the owner and offer a line in the agent instructions to write the time.
             - Phases, gates and tasks are usually markdown: checkbox lines (`- [x] Design`) or lines like `Review: waiting`. Use `"list": "checkboxes"` for the first and a regular expression with named groups for the second. Group names: `n`, `name`, `done`, `started`, `doneAt` for phases; `gate`, `status`, `at` for gates.
             - `artefact` is the file a reviewer opens at a gate. `approve` is the exact command that signs a gate off, if the repo has one. Chief Stew copies it and never runs it.
             - `parked` (set aside) and `closed` (finished, waiting to merge) are regular expressions on the state line.
+            - If builds are folders (one per piece of work, all on the main checkout), they're never merged, so say when one is finished with `done` (a regex on the state line): it then leaves the panel, and a roadmap shows it as done. Don't use `parked` for finished work. If each folder's file names the work (a heading like `# 012 · Login screen`), describe it with `title`, so the panel shows the name rather than the folder's.
             - If the tasks belong to one phase (a plan's tasks are built in an "implement" or "execute" phase), give `tasks` that phase's number as `phase`, so the count isn't shown for the rest of the build.
             - If each build records how long it's meant to take (e.g. `Size: L (2h)`), describe it with `budget` (a regex with named groups `hours` and `label`). Chief Stew then shows elapsed time against it.
 
