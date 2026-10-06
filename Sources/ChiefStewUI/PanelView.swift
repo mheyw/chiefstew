@@ -472,6 +472,12 @@ struct BuildRowView: View {
                 Text(line3).font(.system(size: 12)).foregroundStyle(.secondary).indented()
             }
             Actions {
+                ForEach(Array(card.workingSessions.prefix(3).enumerated()), id: \.element) { i, session in
+                    Button(card.workingSessions.count == 1 ? "Go to session" : "Go to session \(i + 1)") {
+                        actions.goToSession(session)
+                    }
+                    .buttonStyle(PillButtonStyle())
+                }
                 if let progress = card.progress {
                     Button("Open progress") { actions.openFile(progress) }
                         .buttonStyle(PillButtonStyle())

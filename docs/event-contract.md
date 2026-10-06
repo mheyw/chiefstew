@@ -126,7 +126,7 @@ Status knows nothing about agent sessions, so Chief Stew keeps a small per-`sess
 - `agent.ended` removes the session.
 - A needs-input record older than 8 h expires, and a session with no events for 24 h is forgotten.
 - Agent state is saved to `…/agents.json`, so it survives a relaunch or an update.
-- A session belongs to a build when its `worktree` (or `repo`) **equals** that build's checkout (a status row's `worktree`), or its own `folder` for a build that has one. Rows that share a build ID count as one build with several checkouts. A checkout that two builds report belongs to neither, since it can't say which one a session is on. Otherwise the session shows as "Claude in `<folder name>`": when it needs input, or, in a registered repo, while Claude Code says it's working.
+- A session belongs to a build when its `worktree` (or `repo`) **equals** that build's checkout (a status row's `worktree`), or its own `folder` for a build that has one. Rows that share a build ID count as one build with several checkouts. A checkout that two builds report, or that a build with a `folder` sits in, belongs to none of them, since it can't say which one a session is on. While Claude Code says it's working, each of those builds in flight says "Claude working in `<repo>`" instead, so there's no extra row and no guess. Otherwise the session shows as "Claude in `<folder name>`": when it needs input, or, in a registered repo, while it's working.
 
 ### 3.4 Chief Stew's reading rules
 

@@ -77,7 +77,7 @@ chiefstew status   # the exact JSON Chief Stew will show (contract § 4)
 | `branches` | `branch`: a pattern like `build/{num}-{slug}` or `feature/{slug}` | a local branch matching the pattern |
 | `folders` | `folder`: a pattern like `docs/builds/{num}_{slug}` | a folder on the main checkout matching the pattern |
 
-Folder builds all share the main checkout. Each is read from disk, so uncommitted work shows. Its activity is its own folder's: the last commit that touched it, or a newer file change. A folder is never merged, so say when one is finished with `done` (below): it leaves the list, and a roadmap still shows it. An agent session in the main checkout could be working on any of them, so it isn't put on one: the panel shows Claude working in the repo. A session started inside a build's folder counts for that build.
+Folder builds all share the main checkout. Each is read from disk, so uncommitted work shows. Its activity is its own folder's: the last commit that touched it, or a newer file change. A folder is never merged, so say when one is finished with `done` (below): it leaves the list, and a roadmap still shows it. An agent session in the main checkout could be working on any of them, so it isn't put on one: each question in flight says "Claude working in <repo>", and with none in flight the repo gets a line of its own. A session started inside a build's folder counts for that build.
 
 `builds.folder` (with `worktrees` or `branches`) is where a build's files live, relative to its checkout. It takes `{num}`, `{slug}` and `{branch}`, and its last part may use `*`, e.g. `docs/builds/{num}_*`. Without it, files are read from the checkout's root.
 

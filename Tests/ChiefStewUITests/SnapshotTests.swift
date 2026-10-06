@@ -124,7 +124,7 @@ let states: [(String, Board)] = [
 ]
 
 /// A repo whose builds are folders on one checkout: the build shows its title and folder, and
-/// Claude working in the checkout is shown for the repo, not guessed onto a build.
+/// Claude working in the checkout is said on it, named for the repo, not guessed onto the build.
 func folderBuilds() -> Board {
     let path = "/Users/you/research"
     var row = BuildRow(

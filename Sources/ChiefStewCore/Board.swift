@@ -90,6 +90,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     public var onlyOnOrigin: Bool = false
     /// When the clone last fetched from origin.
     public var fetchedAt: Date?
+    /// Busy sessions on this build, or in the checkout it shares: for "Go to session".
+    public var workingSessions: [String] = []
     /// Claude Code says a session in this build's checkout is busy. On a parked build it means
     /// the build was picked up again before its Current state line said so.
     public var agentWorking: Bool = false
@@ -304,16 +306,27 @@ extension Board {
         // Each agent session belongs to the build whose checkout it runs in. The emitter sends
         // the checkout root, so this is an exact match (contract § 3.3), not a prefix match:
         // nested worktrees under .claude/worktrees are separate checkouts. A checkout two builds
-        // report can't say which one a session is on, so it's on neither.
+        // report can't say which one a session is on, so it's on neither: each of those builds in
+        // flight carries it, named for the repo rather than the build (no extra row, no guess).
         var sessionsByBuild: [String: [AgentState]] = [:]
+        var sharedByBuild: [String: [AgentState]] = [:]
+        var carried = Set<String>()
         var loose: [AgentState] = []
         for agent in agents {
             let target = PathMatch.normalize(agent.path)
             let matches = builds.filter { $0.paths.contains { PathMatch.normalize($0) == target } }
             if matches.count == 1, let b = matches.first {
                 sessionsByBuild[cardID(b.repo, b.row), default: []].append(agent)
-            } else {
-                loose.append(agent)
+                continue
+            }
+            loose.append(agent)
+            let ambiguous = Set(matches.count > 1 ? matches.map { cardID($0.repo, $0.row) } : [])
+            for b in builds where !b.row.isParked {
+                let id = cardID(b.repo, b.row)
+                let shares = b.row.folder != nil && b.row.worktree.map(PathMatch.normalize) == target
+                guard ambiguous.contains(id) || shares else { continue }
+                sharedByBuild[id, default: []].append(agent)
+                carried.insert(agent.session)
             }
         }
 
@@ -321,7 +334,8 @@ extension Board {
         for (repo, row, _) in builds {
             let id = cardID(repo, row)
             let agents = sessionsByBuild[id] ?? []
-            let card = makeCard(repo: repo, row: row, agents: agents, claude: claude, now: now)
+            let card = makeCard(
+                repo: repo, row: row, agents: agents, shared: sharedByBuild[id] ?? [], claude: claude, now: now)
 
             // A parked build was set aside on purpose: its gate or merge doesn't need you now.
             if !card.parked {
@@ -356,10 +370,13 @@ extension Board {
             }
             if !needBuilds.contains(id) { board.inProgress.append(card) }
         }
-        // Working sessions that aren't on one build, per registered repo. Only Claude Code's own
-        // session list can say a session is working; without it, nothing is said.
+        // Working sessions no build card carries (a branch repo's main checkout, or a folder repo
+        // with nothing in flight), per registered repo. Only Claude Code's own session list can
+        // say a session is working; without it, nothing is said.
         var working: [String: (repo: RepoSnapshot, agents: [AgentState])] = [:]
-        for agent in loose where agent.needsInput == nil && claude?.sessions[agent.session]?.status == .busy {
+        for agent in loose where agent.needsInput == nil && !carried.contains(agent.session)
+            && claude?.sessions[agent.session]?.status == .busy
+        {
             let path = PathMatch.normalize(agent.repo)
             guard let repo = repos.first(where: { PathMatch.normalize($0.path) == path }) else { continue }
             working[repo.path, default: (repo, [])].agents.append(agent)
@@ -441,7 +458,8 @@ extension Board {
     }
 
     static func makeCard(
-        repo: RepoSnapshot, row: BuildRow, agents: [AgentState], claude: ClaudeSessions?, now: Date
+        repo: RepoSnapshot, row: BuildRow, agents: [AgentState], shared: [AgentState] = [],
+        claude: ClaudeSessions?, now: Date
     ) -> BuildCard
     {
         let waiting = Set(row.waitingGates.compactMap(\.phase))
@@ -484,6 +502,13 @@ extension Board {
             let since = idle.allSatisfy { $0.since != nil } ? idle.compactMap(\.since).max() : nil
             agentLine = "Claude idle" + (since.map { " \(Durations.short(now.timeIntervalSince($0)))" } ?? "")
         }
+        // Sessions in the checkout this build shares: working in the repo, maybe not on this build.
+        let sharedBusy = claude.map { c in shared.filter { c.sessions[$0.session]?.status == .busy } } ?? []
+        if agentLine == nil, !sharedBusy.isEmpty {
+            agentLine = sharedBusy.count == 1
+                ? "Claude working in \(repo.name)" : "\(sharedBusy.count) Claude sessions working in \(repo.name)"
+        }
+        let ownBusy = claude.map { c in agents.filter { c.sessions[$0.session]?.status == .busy } } ?? []
 
         return BuildCard(
             id: cardID(repo, row), repoName: repo.name, num: row.num, slug: displayName(row),
@@ -496,7 +521,9 @@ extension Board {
             staleSince: repo.statusError?.since,
             parked: row.isParked,
             branch: row.branch, branchURL: row.branchURL, author: row.author,
-            onlyOnOrigin: row.onlyOnOrigin == true, fetchedAt: repo.status?.fetchedAt, agentWorking: busy > 0,
+            onlyOnOrigin: row.onlyOnOrigin == true, fetchedAt: repo.status?.fetchedAt,
+            workingSessions: (ownBusy + sharedBusy).sorted { $0.lastEventAt > $1.lastEventAt }.map(\.session),
+            agentWorking: busy > 0 || !sharedBusy.isEmpty,
             repoPath: repo.path, budget: row.budget, mine: row.mine)
     }
 
