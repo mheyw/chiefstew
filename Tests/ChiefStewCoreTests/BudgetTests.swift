@@ -90,3 +90,38 @@ private func board(_ rows: [BuildRow], at now: Date) -> Board {
     let nextYear = now.addingTimeInterval(400 * 86400)
     #expect(Durations.sinceDay(card.startedAt!, now: nextYear, locale: Locale(identifier: "en_GB")) == "since 6 Oct 2026")
 }
+
+/// The dots' tooltip says what each dot is and when: two phases under way are told apart, a
+/// finished one has its span, a day-only start stays a day, and a waiting gate says so.
+@Test func phaseLinesNameAndTimeEveryDot() throws {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = .current
+    let at = { (s: String) in LooseDate.parse(s)! }
+    var p1 = PhaseInfo(n: 1, name: "Corpus review", status: "done", startedAt: at("2026-10-06"), doneAt: at("2026-10-06 19:50"))
+    p1.startedDateOnly = true
+    let rows = [
+        p1,
+        PhaseInfo(n: 2, name: "Research", status: "active", startedAt: at("2026-10-06 19:50")),
+        PhaseInfo(n: 3, name: "Proposal", status: "done", startedAt: at("2026-10-06 19:58"), doneAt: at("2026-10-06 20:03")),
+        PhaseInfo(n: 4, name: "Challenge", status: "active", startedAt: at("2026-10-06 20:03")),
+        PhaseInfo(n: 5, name: "Accept", status: "pending"),
+    ]
+    let row = BuildRow(
+        num: "R03", slug: "", lastCommitAt: Date(), phases: rows,
+        gates: [GateInfo(gate: "sign-off", status: "waiting", phase: 4)])
+    let now = at("2026-10-06 20:55")
+    let card = try #require(
+        Board.make(repos: [RepoSnapshot(path: "/r", status: StatusReport(builds: [row]))], agents: [], now: now)
+            .needsYou.first?.card)
+    #expect(card.phaseLines(now: now, calendar: cal, locale: Locale(identifier: "en_GB")) == [
+        "✓ Corpus review · 6 Oct → 19:50",
+        "◐ Research · since 19:50 (1h 5m)",
+        "✓ Proposal · 19:58 → 20:03 (5 min)",
+        "● Challenge · since 20:03 (52 min) · waiting on sign-off",
+        "○ Accept",
+    ])
+    // On hover, one phase replaces the label: no mark, since the dot under the pointer is one.
+    #expect(card.phaseLine(1, now: now)?.hasPrefix("Research · since ") == true)
+    #expect(card.phaseLine(4, now: now) == "Accept")
+    #expect(card.phaseLine(5, now: now) == nil)
+}

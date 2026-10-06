@@ -36,16 +36,30 @@ extension NSColor {
 struct PhaseDotsView: View {
     var dots: [PhaseDot]
     var dimmed = false
+    /// One line per phase (`BuildCard.phaseLines`), read by VoiceOver.
+    var detail: [String] = []
+    /// The dot under the pointer. The row shows that phase's line in place of its label: system
+    /// tooltips don't appear in a menu-bar panel, and a line swapped in place never jumps.
+    var hovered: Binding<Int?>?
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(dots.enumerated()), id: \.offset) { _, dot in
+        HStack(spacing: 0) {
+            ForEach(Array(dots.enumerated()), id: \.offset) { i, dot in
                 dotView(dot).frame(width: 7, height: 7)
+                    // A bigger target than the dot, filling the gap to the next one.
+                    .padding(.horizontal, 1.5).padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        guard let hovered else { return }
+                        if inside { hovered.wrappedValue = i } else if hovered.wrappedValue == i { hovered.wrappedValue = nil }
+                    }
             }
         }
+        .padding(.horizontal, -1.5)
         .accessibilityElement()
         .accessibilityLabel(
             "\(dots.filter { $0 == .done }.count) of \(dots.count) phases done")
+        .accessibilityValue(detail.joined(separator: ", "))
     }
 
     @ViewBuilder private func dotView(_ dot: PhaseDot) -> some View {
@@ -63,6 +77,33 @@ struct PhaseDotsView: View {
                             Color.clear
                         }))
         }
+    }
+}
+
+/// One line, cut short; rest the pointer on it and it shows in full. System tooltips don't
+/// appear in a menu-bar panel. The wait means a pointer passing over on its way to the buttons
+/// below doesn't push them away; leaving collapses it at once.
+struct ExpandingLine: View {
+    var text: String
+    static let delay: Duration = .milliseconds(500)
+    @State private var expanded = false
+    @State private var pending: Task<Void, Never>?
+
+    var body: some View {
+        Text(text).lineLimit(expanded ? nil : 1).truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .onHover { inside in
+                pending?.cancel()
+                guard inside else {
+                    expanded = false
+                    return
+                }
+                pending = Task { @MainActor in
+                    try? await Task.sleep(for: Self.delay)
+                    if !Task.isCancelled { expanded = true }
+                }
+            }
+            .onDisappear { pending?.cancel() }
     }
 }
 

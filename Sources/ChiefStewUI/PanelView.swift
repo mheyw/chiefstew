@@ -321,6 +321,7 @@ struct NeedsRow: View {
     var item: NeedsItem
     var now: Date
     var actions: PanelActions
+    @State private var hovered: Int?
 
     var body: some View {
         Row(label: label) {
@@ -331,9 +332,10 @@ struct NeedsRow: View {
             case .gate(let gate):
                 HStack(spacing: 0) {
                     if let dots = item.card?.dots, !dots.isEmpty {
-                        PhaseDotsView(dots: dots).padding(.trailing, 6)
+                        PhaseDotsView(dots: dots, detail: item.card?.phaseLines(now: now) ?? [], hovered: $hovered)
+                            .padding(.trailing, 6)
                     }
-                    Text("\(gate.title) ready, waiting on your sign-off")
+                    Text(hovered.flatMap { item.card?.phaseLine($0, now: now) } ?? "\(gate.title) ready, waiting on your sign-off")
                 }
                 .indented()
                 Actions {
@@ -429,6 +431,7 @@ struct BuildRowView: View {
     var card: BuildCard
     var now: Date
     var actions: PanelActions
+    @State private var hovered: Int?
 
     var body: some View {
         Row(label: "\(card.num) \(card.slug)") {
@@ -452,11 +455,14 @@ struct BuildRowView: View {
             }
             HStack(spacing: 0) {
                 if !card.dots.isEmpty {
-                    PhaseDotsView(dots: card.dots, dimmed: card.staleSince != nil || (card.parked && !card.agentWorking))
+                    PhaseDotsView(
+                        dots: card.dots, dimmed: card.staleSince != nil || (card.parked && !card.agentWorking),
+                        detail: card.phaseLines(now: now), hovered: $hovered)
                         .padding(.trailing, 6)
                 }
-                Text(line2)
-                if let t = card.tasks, t.total > 0 {
+                // One line only while a phase is shown, so the row doesn't jump.
+                Text(hovered.flatMap { card.phaseLine($0, now: now) } ?? line2).lineLimit(hovered == nil ? nil : 1)
+                if hovered == nil, let t = card.tasks, t.total > 0 {
                     TaskBar(tasks: t).padding(.leading, 6)
                 }
             }
@@ -464,9 +470,8 @@ struct BuildRowView: View {
             if let label = card.phaseLabel, !card.state.isEmpty,
                 !card.state.lowercased().hasSuffix(label.lowercased())
             {
-                Text(card.state).lineLimit(1).truncationMode(.tail)
+                ExpandingLine(text: card.state)
                     .font(.system(size: 12)).foregroundStyle(.secondary).indented()
-                    .help(card.state)
             }
             if !line3.isEmpty {
                 Text(line3).font(.system(size: 12)).foregroundStyle(.secondary).indented()

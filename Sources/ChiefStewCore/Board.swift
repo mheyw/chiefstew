@@ -58,6 +58,8 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
     /// The repo's route name for this build, if it has lanes.
     public var lane: String?
     public var dots: [PhaseDot]
+    /// The phases behind the dots, in the same order: named and timed on hover.
+    public var phases: [PhaseInfo] = []
     /// `Execute`, `Plan gate`, `Spec next`; nil when status has no phases.
     public var phaseLabel: String?
     public var tasks: TaskCount?
@@ -108,6 +110,50 @@ public struct BuildCard: Sendable, Equatable, Identifiable {
         // A day alone can't time a budget: midnight would put it hours over.
         guard let budget, let startedAt, !startedDateOnly, !parked, !flags.contains("closed-unmerged") else { return nil }
         return (now.timeIntervalSince(startedAt), budget.hours * 3600)
+    }
+
+    /// One line per phase, for the dots' tooltip: what each dot is, and when.
+    /// `✓ Design · 09:10 → 11:40 (2h 30m)`, `◐ Build · since 11:40 (1h 5m)`, `○ Review`.
+    public func phaseLines(now: Date, calendar: Calendar = .current, locale: Locale = .current) -> [String] {
+        func time(_ d: Date, dayOnly: Bool) -> String {
+            let day = Date.FormatStyle(locale: locale, calendar: calendar).day().month(.abbreviated)
+            if dayOnly { return d.formatted(day) }
+            let clock = Date.FormatStyle(locale: locale, calendar: calendar).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
+            return calendar.isDate(d, inSameDayAs: now) ? d.formatted(clock) : "\(d.formatted(day)) \(d.formatted(clock))"
+        }
+        return zip(phases, dots).map { p, dot in
+            let mark: String
+            switch dot {
+            case .done: mark = "✓"
+            case .active: mark = "◐"
+            case .waiting: mark = "●"
+            case .pending: mark = "○"
+            }
+            var line = "\(mark) \(p.name)"
+            let dayOnly = p.startedDateOnly
+            if dot == .done {
+                switch (p.startedAt, p.doneAt) {
+                case let (start?, done?):
+                    line += " · \(time(start, dayOnly: dayOnly)) → \(time(done, dayOnly: false))"
+                    if !dayOnly, done > start { line += " (\(Durations.short(done.timeIntervalSince(start))))" }
+                case let (nil, done?): line += " · done \(time(done, dayOnly: false))"
+                case let (start?, nil): line += " · from \(time(start, dayOnly: dayOnly))"
+                case (nil, nil): break
+                }
+            } else if let start = p.startedAt {
+                line += " · since \(time(start, dayOnly: dayOnly))"
+                if !dayOnly { line += " (\(Durations.short(now.timeIntervalSince(start))))" }
+            }
+            if dot == .waiting { line += " · waiting on sign-off" }
+            return line
+        }
+    }
+
+    /// One phase's line without its mark (the dot beside it already is one), for the label
+    /// while the pointer is on that dot.
+    public func phaseLine(_ i: Int, now: Date) -> String? {
+        let lines = phaseLines(now: now)
+        return lines.indices.contains(i) ? String(lines[i].dropFirst(2)) : nil
     }
 
     /// The row's one status label, next to its name.
@@ -513,7 +559,7 @@ extension Board {
         return BuildCard(
             id: cardID(repo, row), repoName: repo.name, num: row.num, slug: displayName(row),
             // None ticked reads as progress that isn't happening (a plan still being written).
-            lane: row.lane, dots: dots, phaseLabel: label, tasks: row.tasks.flatMap { $0.done > 0 ? $0 : nil },
+            lane: row.lane, dots: dots, phases: phases, phaseLabel: label, tasks: row.tasks.flatMap { $0.done > 0 ? $0 : nil },
             state: row.state, startedAt: first?.startedAt, startedDateOnly: first?.startedDateOnly ?? false,
             lastActivity: max(row.lastCommitAt, row.changedAt ?? .distantPast, latest?.lastEventAt ?? .distantPast),
             agentLine: agentLine, behind: row.behind, flags: row.flags, worktree: row.worktree, folder: row.folder,
