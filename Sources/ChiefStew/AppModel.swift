@@ -183,7 +183,9 @@ final class AppModel {
                 while !Task.isCancelled {
                     guard let self else { return }
                     self.tick = Date()
-                    self.events.prune(now: self.tick)
+                    var pruned = self.events
+                    pruned.prune(now: self.tick)
+                    if pruned != self.events { self.events = pruned }
                     self.watcher?.ensureRunning()
                     await self.notifier.refreshPermission()  // it can change in System Settings
                     self.heartbeat()
@@ -646,7 +648,7 @@ final class AppModel {
         guard case .success = await client(), let login,
             let exe = ClaudeSessions.locate(path: login.path)
         else {
-            claude = nil
+            if claude != nil { claude = nil }
             return
         }
         let r = try? await CommandRunner.run(
@@ -654,12 +656,12 @@ final class AppModel {
             environment: ["PATH": "\(login.path):/usr/bin:/bin", "HOME": NSHomeDirectory()], timeout: 10)
         guard let r, r.exitCode == 0, !r.timedOut, let report = ClaudeSessions.parse(r.stdout) else {
             log.error("claude agents --json: \(r.map { $0.stderrText } ?? "didn't run", privacy: .public)")
-            claude = nil
+            if claude != nil { claude = nil }
             return
         }
         var sessions = claude ?? ClaudeSessions()
         sessions.update(report, at: Date())
-        claude = sessions
+        if sessions != claude { claude = sessions }
     }
 
     func refresh(_ repo: String) async {
@@ -710,7 +712,7 @@ final class AppModel {
         current.statusAt = snap.statusAt
         current.statusError = snap.statusError
         current.agentsOnly = snap.agentsOnly
-        snapshots[repo] = current
+        setSnapshot(current, for: repo)
         updateNotifications()
         dumpDebugState()
         await refreshRoadmap(repo)
@@ -740,7 +742,13 @@ final class AppModel {
         } else {
             snap.roadmapError = nil
         }
-        snapshots[repo] = snap
+        setSnapshot(snap, for: repo)
+    }
+
+    /// Observed state is written only when it changed: every write re-renders each view that
+    /// reads `snapshots`, and most polls find nothing new.
+    private func setSnapshot(_ snap: RepoSnapshot, for repo: String) {
+        if snapshots[repo] != snap { snapshots[repo] = snap }
     }
 
     nonisolated static func readRoadmap(repo: String, previous: Roadmap?) -> (Bool, Roadmap?, RepoError?) {
@@ -781,19 +789,23 @@ final class AppModel {
         else { return }
         sweeping.insert(repo)
         defer { sweeping.remove(repo) }
-        switch await client.sweep(repo: repo) {
+        let result = await client.sweep(repo: repo)
+        guard var snap = snapshots[repo] else { return }  // removed while running
+        switch result {
         case .success(let report):
-            snapshots[repo]?.sweepError = nil
-            guard let report else { return }  // no sweep command
-            snapshots[repo]?.sweep = report
-            snapshots[repo]?.sweepAt = Date()
-            dumpDebugState()
+            snap.sweepError = nil
+            if let report {  // nil: no sweep command
+                snap.sweep = report
+                snap.sweepAt = Date()
+            }
         case .failure(let error):
             log.error("\(repo, privacy: .public) sweep: \(error.description, privacy: .public)")
-            if snapshots[repo]?.sweepError?.message != error.description {
-                snapshots[repo]?.sweepError = RepoError(message: error.description, since: Date(), hint: error.hint)
+            if snap.sweepError?.message != error.description {
+                snap.sweepError = RepoError(message: error.description, since: Date(), hint: error.hint)
             }
         }
+        setSnapshot(snap, for: repo)
+        if case .success(.some) = result { dumpDebugState() }
     }
 
     private func client() async -> Result<StatusClient, LoginEnvironment.Failure> {

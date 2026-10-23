@@ -61,20 +61,27 @@ private struct LabelHost: View {
     }
 }
 
-/// The panel, with Settings and the window wired to its buttons.
+/// The panel, with Settings and the window wired to its buttons. AppKit keeps the panel's views
+/// alive while it's hidden, so the board is only built and laid out while it's open.
 private struct PanelHost: View {
     let model: AppModel
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            PanelView(
-                board: model.board(now: context.date), now: context.date, update: model.update,
-                refreshing: model.refreshing,
-                actions: model.actions(
-                    openSettings: { openSettingsTab($0, model: model, openSettings) },
-                    openWindow: { showWindow($0, model: model, openWindow) }))
+        Group {
+            if model.panelOpen {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    PanelView(
+                        board: model.board(now: context.date), now: context.date, update: model.update,
+                        refreshing: model.refreshing,
+                        actions: model.actions(
+                            openSettings: { openSettingsTab($0, model: model, openSettings) },
+                            openWindow: { showWindow($0, model: model, openWindow) }))
+                }
+            } else {
+                Color.clear.frame(width: PanelView.width, height: 1)
+            }
         }
         .onAppear {
             model.panelOpen = true
@@ -101,20 +108,27 @@ private struct PanelHost: View {
 }
 
 /// The window's content. SwiftUI may open or restore a `Window` scene by itself at launch; it's
-/// only ever shown when asked for from the panel (or reopened after an update).
+/// only ever shown when asked for from the panel (or reopened after an update). A closed window's
+/// views stay alive, so the board is only built and laid out while it's open.
 private struct BoardWindowHost: View {
     @Bindable var model: AppModel
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            BoardWindowView(
-                repos: model.repoViews(now: context.date), selection: $model.windowSelection,
-                now: context.date,
-                actions: model.actions(
-                    openSettings: { openSettingsTab($0, model: model, openSettings) },
-                    openWindow: { showWindow($0, model: model, openWindow) }))
+        Group {
+            if model.windowOpen {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    BoardWindowView(
+                        repos: model.repoViews(now: context.date), selection: $model.windowSelection,
+                        now: context.date,
+                        actions: model.actions(
+                            openSettings: { openSettingsTab($0, model: model, openSettings) },
+                            openWindow: { showWindow($0, model: model, openWindow) }))
+                }
+            } else {
+                Color.clear
+            }
         }
         .frame(minWidth: 640, minHeight: 420)
         .background(WindowAccessor { window in
