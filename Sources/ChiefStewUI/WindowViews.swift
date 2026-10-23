@@ -52,12 +52,7 @@ public struct BoardWindowView: View {
                     Text(repo?.name ?? "All repos").font(.system(size: 15, weight: .semibold))
                     Spacer()
                     if repo != nil {
-                        Picker("Show", selection: $selection.tab) {
-                            ForEach(WindowTab.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .fixedSize()
+                        TabPicker(tab: selection.tab) { selection.tab = $0 }.equatable()
                     }
                 }
                 .padding(.horizontal, 16)
@@ -83,6 +78,24 @@ public struct BoardWindowView: View {
             }
             .font(.system(size: 13))
         }
+    }
+}
+
+/// The window's tab switch, redrawn only when the tab changes: on macOS 26 a segmented `Picker`
+/// leaks SwiftUI observation state each time it's redrawn, and the window redraws on every poll.
+struct TabPicker: View, Equatable {
+    var tab: WindowTab
+    var select: (WindowTab) -> Void
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.tab == b.tab }
+
+    var body: some View {
+        Picker("Show", selection: Binding(get: { tab }, set: { select($0) })) {
+            ForEach(WindowTab.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 }
 
