@@ -6,7 +6,7 @@ import Testing
 
 // Offscreen renders of every state. They assert the views
 // render at the panel width and write PNGs to $CHIEFSTEW_SNAPSHOTS (default: a temp folder) for
-// eyeballing against docs/mockup/states.png.
+// eyeballing; docs/mockup/render.sh puts them in the overview.
 
 let now = Date(timeIntervalSince1970: 1_759_240_920)  // 2026-09-30 14:02 UTC
 func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }

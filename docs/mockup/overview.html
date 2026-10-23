@@ -1,0 +1,220 @@
+<!doctype html>
+<!-- Chief Stew overview. The panel and window images are the app's own renders (img/, from the UI
+     snapshot tests); everything else is drawn here. All data is invented. Render: docs/mockup/render.sh -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Chief Stew — overview</title>
+<style>
+  :root { --orange:#e8750a; --orange-text:#b03a00; --green:#2e9d4f; --blue:#0a66d8; --sec:#6e6e73; --sep:rgba(0,0,0,.09); }
+  * { box-sizing:border-box; }
+  html { background:linear-gradient(160deg,#c9d6e8 0%,#dfd3e6 55%,#e9dccd 100%); min-height:100%; }
+  body { margin:0; padding:28px 32px 40px; font:13px/1.4 -apple-system, "SF Pro Text", system-ui, sans-serif; color:#1d1d1f; width:1000px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .lede { font-size:14px; color:#2c2c2e; margin:0 0 14px; max-width:900px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:#3a3a3c; margin:34px 0 4px; }
+  h2 span { text-transform:none; letter-spacing:0; font-weight:400; color:#48484a; }
+  .intro { color:#2c2c2e; margin:0 0 14px; max-width:920px; }
+  .card { background:rgba(255,255,255,.72); border-radius:10px; padding:12px 18px; }
+  .card ul { margin:4px 0; padding-left:18px; } .card li { margin:3px 0; }
+  .mono { font:11.5px ui-monospace, "SF Mono", Menlo, monospace; }
+  .facts { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
+  .facts .card b { display:block; margin-bottom:2px; }
+
+  /* how it knows */
+  .flow { display:grid; grid-template-columns:1.25fr 28px 1fr 28px .9fr; align-items:center; gap:0; }
+  .src { display:flex; flex-direction:column; gap:7px; }
+  .src div { background:rgba(255,255,255,.8); border-radius:8px; padding:7px 11px; font-size:12px; }
+  .src div b { font-size:12.5px; } .src .when { color:var(--sec); }
+  .arrow { text-align:center; color:#636366; font-size:20px; }
+  .core { background:#1d3557; color:#fff; border-radius:10px; padding:14px 16px; font-size:12px; }
+  .core b { font-size:14px; display:block; margin-bottom:4px; } .core .mono { color:#cfe0f5; }
+  .out { display:flex; flex-direction:column; gap:7px; }
+  .out div { background:rgba(255,255,255,.8); border-radius:8px; padding:7px 11px; font-size:12px; }
+
+  /* menu bar */
+  .bars { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px 20px; margin-top:10px; }
+  .barrow { display:flex; align-items:center; gap:10px; }
+  .barlabel { width:120px; font-size:11.5px; font-weight:600; color:#3a3a3c; text-align:right; }
+  .menubar { flex:1; height:26px; background:rgba(246,246,246,.78); border-radius:6px; display:flex; align-items:center;
+             justify-content:flex-end; padding:0 10px; gap:12px; font-size:13px; box-shadow:0 0 0 .5px rgba(0,0,0,.12); }
+  .menubar .other { color:#3a3a3c; opacity:.5; letter-spacing:2px; }
+  .menubar img { height:24px; mix-blend-mode:multiply; }
+
+  /* panels */
+  .panels { display:grid; grid-template-columns:repeat(2, 452px); column-gap:32px; margin-top:12px; align-items:start; }
+  .shot { break-inside:avoid; margin:0 0 24px; }
+  .shot h3 { font-size:12.5px; margin:0 0 6px; color:#1d1d1f; } .shot h3 span { font-weight:400; color:#48484a; }
+  .panel { width:452px; border-radius:11px; overflow:hidden; display:block;
+           box-shadow:0 0 0 .5px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.2); }
+  .panel img { width:452px; display:block; }
+
+  /* notifications */
+  .notifs { display:grid; grid-template-columns:repeat(2, 452px); gap:12px 32px; margin-top:12px; }
+  .notif { background:rgba(250,250,250,.94); border-radius:14px; padding:10px 12px; display:flex; gap:10px;
+           box-shadow:0 0 0 .5px rgba(0,0,0,.15), 0 8px 20px rgba(0,0,0,.16); }
+  .notif .ic { width:32px; height:32px; border-radius:8px; background:#1d3557; flex:none; display:flex; align-items:center; justify-content:center; }
+  .notif .ic img { height:22px; filter:invert(1); }
+  .notif b { font-size:13px; } .notif .t { font-size:12.5px; color:#3a3a3c; } .notif .ts { margin-left:auto; color:var(--sec); font-size:11.5px; white-space:nowrap; }
+  .notif .k { font-size:11px; color:var(--sec); margin-top:2px; }
+
+  /* window */
+  .win { width:880px; background:#fff; border-radius:11px; overflow:hidden; margin-top:12px;
+         box-shadow:0 0 0 .5px rgba(0,0,0,.2), 0 16px 40px rgba(0,0,0,.24); display:grid; grid-template-columns:200px 680px; }
+  .side { background:#ececee; padding:12px 10px; border-right:1px solid var(--sep); }
+  .lights { display:flex; gap:8px; margin:0 0 16px 4px; } .lights i { width:12px; height:12px; border-radius:50%; background:#d0d0d4; }
+  .side .it { display:flex; justify-content:space-between; padding:4px 8px; border-radius:6px; font-size:13px; }
+  .side .it.sel { background:rgba(0,0,0,.09); } .side .it span { color:var(--sec); font-variant-numeric:tabular-nums; }
+  .side .hd { font-size:11px; font-weight:600; color:var(--sec); margin:12px 8px 4px; }
+  .main .top { display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid var(--sep); }
+  .main .top b { font-size:15px; }
+  .seg { margin-left:auto; display:flex; background:rgba(0,0,0,.07); border-radius:6px; padding:2px; font-size:12px; }
+  .seg span { padding:2px 12px; border-radius:5px; } .seg .on { background:#fff; box-shadow:0 0 0 .5px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.1); }
+  .main img { width:680px; display:block; }
+  .pages { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:12px; align-items:start; }
+  .page { background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 0 0 .5px rgba(0,0,0,.18), 0 10px 26px rgba(0,0,0,.18); }
+  .page .top { padding:8px 14px; border-bottom:1px solid var(--sep); font-weight:600; display:flex; }
+  .page .top .seg { font-weight:400; }
+  .page img { width:100%; display:block; }
+
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:34px; }
+  ol.steps { margin:4px 0; padding-left:20px; } ol.steps li { margin:4px 0; }
+  .foot { margin-top:30px; color:#48484a; font-size:11.5px; }
+</style>
+</head>
+<body>
+
+<h1>Chief Stew</h1>
+<p class="lede">A macOS menu-bar app that shows, live, what the coding agents and builds in your git repos are doing, and
+<b>what needs you</b>: a Claude session asking a question or waiting for permission, a build waiting for your sign-off,
+finished work that isn't merged. Everything else stays quiet, so you can get on with other things while they run.</p>
+
+<div class="facts">
+  <div class="card"><b>Any git repo</b>With no setup it shows each repo's agents. A repo that describes its workflow in
+    <span class="mono">.chiefstew.json</span> also gets its builds, phases, gates, leftovers and roadmap.</div>
+  <div class="card"><b>The panel notifies, the window explains</b>The panel shows what needs you, what's broken and what's
+    moving. The window (⌘O) shows each repo's roadmap and the full detail of anything left behind.</div>
+  <div class="card"><b>It only displays</b>It never runs builds or cleanup, and never changes a repo. Local only: no
+    network listeners, no telemetry. Its one network access is checking its own repo for updates.</div>
+</div>
+
+<h2>How it knows <span>— status is the truth; events are hints</span></h2>
+<div class="flow">
+  <div class="src">
+    <div><b>Claude Code hooks</b> <span class="when">· instant</span><br>a session asks a question, waits for permission, resumes</div>
+    <div><b>Claude Code's session list</b> <span class="when">· each poll</span><br>which sessions are working or idle</div>
+    <div><b>The repo's status</b> <span class="when">· every 60 s</span><br>builds, phases, tasks, gates, merged or not (read-only)</div>
+    <div><b>The repo's sweep</b> <span class="when">· every 15 min</span><br>leaked databases, stray processes and routes</div>
+    <div><b>The roadmap file in git</b> <span class="when">· when it changes</span><br>what's next, still to come and shipped</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="core"><b>Chief Stew</b>One board per moment, built from those facts. Every event is journaled
+    (<span class="mono">events.jsonl</span>) and replayed at launch, so a restart or update loses nothing.
+    Repos' scripts can add instant hints with <span class="mono">chiefstew emit</span>.</div>
+  <div class="arrow">→</div>
+  <div class="out">
+    <div><b>Menu-bar icon</b><br>at a glance</div>
+    <div><b>Panel</b><br>what needs you, what's moving</div>
+    <div><b>Notifications</b><br>only for what needs you</div>
+    <div><b>Window</b><br>roadmap and leftovers</div>
+  </div>
+</div>
+
+<h2>Menu bar <span>— icon only, so a full menu bar never hides it</span></h2>
+<div class="bars">
+  <div class="barrow"><div class="barlabel">Nothing in flight</div><div class="menubar"><span class="other">▤▤</span><img src="img/menubar-1-idle.png"><span>Thu 23 Oct 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">Builds running</div><div class="menubar"><span class="other">▤▤</span><img src="img/menubar-2-in-progress.png"><span>Thu 23 Oct 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">Something needs you</div><div class="menubar"><span class="other">▤▤</span><img src="img/menubar-3-needs-you.png"><span>Thu 23 Oct 14:02</span></div></div>
+  <div class="barrow"><div class="barlabel">Something left behind</div><div class="menubar"><span class="other">▤▤</span><img src="img/menubar-4-left-behind.png"><span>Thu 23 Oct 14:02</span></div></div>
+</div>
+
+<h2>The panel <span>— click the icon; needs-you first (oldest waiting), then in progress, teammates, left behind</span></h2>
+<div class="panels">
+<div>
+  <div class="shot"><h3>Needs you <span>— an unmerged close, a gate, an agent's question</span></h3>
+    <div class="panel"><img src="img/panel-3-needs-you.png"></div></div>
+  <div class="shot"><h3>Left behind <span>— one line; the commands to copy; Details opens the window</span></h3>
+    <div class="panel"><img src="img/panel-4-left-behind.png"></div></div>
+  <div class="shot"><h3>Can't read a repo <span>— the problem and a fix; last good data kept</span></h3>
+    <div class="panel"><img src="img/panel-5-stale.png"></div></div>
+  <div class="shot"><h3>Builds as folders <span>— a repo that tracks work in folders on one checkout</span></h3>
+    <div class="panel"><img src="img/panel-12-folder-builds.png"></div></div>
+  <div class="shot"><h3>An update is ready <span>— installs itself when the panel isn't open</span></h3>
+    <div class="panel"><img src="img/panel-update-available.png"></div></div>
+  <div class="shot"><h3>Dark mode</h3>
+    <div class="panel"><img src="img/panel-3-needs-you-dark.png"></div></div>
+</div>
+<div>
+  <div class="shot"><h3>In progress <span>— phase dots, tasks, lane, what Claude is doing</span></h3>
+    <div class="panel"><img src="img/panel-2-in-progress.png"></div></div>
+  <div class="shot"><h3>Teammates <span>— their unmerged work is information, not yours to act on</span></h3>
+    <div class="panel"><img src="img/panel-11-teammates.png"></div></div>
+  <div class="shot"><h3>Over budget <span>— a build's clock against the budget it states</span></h3>
+    <div class="panel"><img src="img/panel-budget.png"></div></div>
+  <div class="shot"><h3>Idle</h3>
+    <div class="panel"><img src="img/panel-1-idle.png"></div></div>
+  <div class="shot"><h3>First run <span>— no repos yet</span></h3>
+    <div class="panel"><img src="img/panel-6-no-repos.png"></div></div>
+</div>
+</div>
+
+<h2>Notifications <span>— only for what needs you; never for progress</span></h2>
+<div class="notifs">
+  <div><div class="notif"><div class="ic"><img src="img/menubar-1-idle.png"></div><div><b>174 needs you</b><div class="t">Plan gate · checkout_flow</div></div><div class="ts">now</div></div>
+    <div class="k">A gate waiting: reminded every 30 min while it waits (configurable). Click opens plan.md.</div></div>
+  <div><div class="notif"><div class="ic"><img src="img/menubar-1-idle.png"></div><div><b>173 needs you</b><div class="t">Claude needs your permission to use Bash · search_index</div></div><div class="ts">now</div></div>
+    <div class="k">An agent asking: click goes to that session.</div></div>
+  <div><div class="notif"><div class="ic"><img src="img/menubar-1-idle.png"></div><div><b>172 isn't merged</b><div class="t">bulk_actions closed 2 days ago. Merge it today.</div></div><div class="ts">now</div></div>
+    <div class="k">Your closed build that isn't in main yet.</div></div>
+  <div><div class="notif"><div class="ic"><img src="img/menubar-1-idle.png"></div><div><b>181 closed, not merged</b><div class="t">Dana closed editor_tidy 25 min ago. It isn't in main yet.</div></div><div class="ts">now</div></div>
+    <div class="k">A teammate's: once, with no banner or sound; withdrawn when it merges.</div></div>
+</div>
+
+<h2>The window <span>— ⌘O from the panel: each repo's roadmap, All repos, and Left behind in full</span></h2>
+<div class="win">
+  <div class="side">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="it">▤ All repos</div>
+    <div class="hd">Repos</div>
+    <div class="it sel">my-app <span>3</span></div>
+    <div class="it">other-app</div>
+  </div>
+  <div class="main">
+    <div class="top"><b>my-app</b><div class="seg"><span class="on">Roadmap</span><span>Left behind</span></div></div>
+    <img src="img/window-roadmap.png">
+  </div>
+</div>
+<p class="intro" style="margin-top:10px">The roadmap is read from the plan the repo already keeps, in git (set one up with
+<span class="mono">chiefstew prompt roadmap</span>). It shows only what the file and status say: Now (live builds), Up next,
+each group in the file's order with counts, and Shipped. Where the file and status disagree, it says so.</p>
+<div class="pages">
+  <div class="page"><div class="top">All repos</div><img src="img/window-all-repos.png"></div>
+  <div class="page"><div class="top">my-app<div class="seg" style="margin-left:auto"><span>Roadmap</span><span class="on">Left behind</span></div></div><img src="img/window-left-behind.png"></div>
+</div>
+
+<div class="two">
+  <div class="card"><b>Adding a repo</b> <span style="color:var(--sec)">— the Add Repo wizard, about a minute</span>
+    <ol class="steps">
+      <li><b>Choose a repo</b>, any git repo. Its agents show straight away.</li>
+      <li><b>Install hooks</b>: one click adds Claude Code hooks for every repo (backed up first; no repo changes).</li>
+      <li><b>Build status</b> (optional): <b>Run setup prompt</b> with your coding agent. It describes the repo's workflow in
+        <span class="mono">.chiefstew.json</span> (data, not code) and checks it with <span class="mono">chiefstew check</span>;
+        the wizard shows the result live. Or <b>Start basic</b>.</li>
+    </ol>
+  </div>
+  <div class="card"><b>Rules it keeps</b>
+    <ul>
+      <li><b>Facts, not guesses.</b> A line is left out rather than inferred.</li>
+      <li><b>Needs you means yours.</b> Teammates' work is listed, not chased.</li>
+      <li><b>Cleanup is copy-only.</b> It shows the command; you run it.</li>
+      <li><b>A repo it can't read</b> keeps its last good data, marked as such.</li>
+      <li><b>Updates</b> are release tags, built and installed on your Mac.</li>
+    </ul>
+  </div>
+</div>
+
+<p class="foot">Panel and window images are Chief Stew's own renders (the UI snapshot tests). All repos, builds and people are invented.
+Re-render: <span class="mono">docs/mockup/render.sh</span>.</p>
+<script>addEventListener("load", () => { document.body.dataset.height = Math.ceil(document.documentElement.scrollHeight) })</script>
+</body>
+</html>
