@@ -29,7 +29,7 @@ struct ChiefStewApp: App {
         .defaultSize(width: 860, height: 620)
 
         Settings {
-            SettingsView(model: model)
+            SettingsHost(model: model)
         }
     }
 }
@@ -138,6 +138,24 @@ private struct BoardWindowHost: View {
         })
         .onAppear { model.windowOpen = true }
         .onDisappear { model.windowOpen = false }
+    }
+}
+
+/// Settings' content. A closed Settings window's views stay alive and keep re-rendering
+/// offscreen whenever what they read changes: ~18 MB held, and a ~50 MB burst of graphics
+/// memory every time the panel opened. So the panes exist only while the window is open; the
+/// stand-in has no size of its own, so the panes size the window again when it reopens.
+private struct SettingsHost: View {
+    let model: AppModel
+    /// Starts true: the content is only made when Settings first opens, so it's showing.
+    @State private var open = true
+
+    var body: some View {
+        Group {
+            if open { SettingsView(model: model) } else { Color.clear }
+        }
+        .onAppear { open = true }
+        .onDisappear { open = false }
     }
 }
 
