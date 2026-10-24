@@ -43,7 +43,7 @@ final class AppModel {
             guard settings != oldValue else { return }
             Self.save(settings, key: "settings")
             if settings.nodePath != oldValue.nodePath {
-                login = nil
+                resetLogin()
                 Task { await refreshAll() }
             }
             updateNotifications()
@@ -66,6 +66,7 @@ final class AppModel {
     @ObservationIgnored private let log = Logger(subsystem: "com.mheyw.chiefstew", category: "app")
     @ObservationIgnored private var lastUpdateCheck = Date.distantPast
     @ObservationIgnored private var updateLatest: String?
+    @ObservationIgnored private var resolving: Task<Result<LoginEnvironment, LoginEnvironment.Failure>, Never>?
 
     static let updateCheckInterval: TimeInterval = 5 * 60
     static let updateNoticeID = "chiefstew-update"
@@ -209,7 +210,7 @@ final class AppModel {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.log.info("woke from sleep; refreshing")
-                self?.login = nil  // PATH or node may have changed
+                self?.resetLogin()  // PATH or node may have changed
                 self?.heartbeat()
                 await self?.refreshAll()
                 await self?.sweepAll()
@@ -624,6 +625,8 @@ final class AppModel {
     func removeRepo(_ path: String) {
         setRepos(repos.filter { $0 != path })
         snapshots[path] = nil
+        pending.removeValue(forKey: path)?.cancel()  // an event's debounced refresh, not run yet
+        rerun.remove(path)
         updateNotifications()
     }
 
@@ -808,22 +811,52 @@ final class AppModel {
         if case .success(.some) = result { dumpDebugState() }
     }
 
+    /// Callers that arrive together (each repo and Claude, at launch and on wake) share one
+    /// login-shell lookup instead of starting a shell each.
     private func client() async -> Result<StatusClient, LoginEnvironment.Failure> {
         if let login { return .success(StatusClient(login: login)) }
+        let lookup: Task<Result<LoginEnvironment, LoginEnvironment.Failure>, Never>
+        if let resolving {
+            lookup = resolving
+        } else {
+            let nodePath = settings.nodePath
+            lookup = Task { await Self.resolveLogin(nodeOverride: nodePath) }
+            resolving = lookup
+        }
+        let result = await lookup.value
+        // The first caller back records it; nil here means login was reset while it ran.
+        if resolving == lookup {
+            resolving = nil
+            switch result {
+            case .success(let found):
+                log.info("node \(found.node ?? "none", privacy: .public) \(found.nodeVersion ?? "", privacy: .public)")
+                login = found
+                loginError = nil
+            case .failure(let error):
+                log.error("\(error.description, privacy: .public)")
+                loginError = error.description
+            }
+        }
+        return result.map { StatusClient(login: $0) }
+    }
+
+    private nonisolated static func resolveLogin(nodeOverride: String?) async
+        -> Result<LoginEnvironment, LoginEnvironment.Failure>
+    {
         do {
-            let found = try await LoginEnvironment.resolve(nodeOverride: settings.nodePath)
-            log.info("node \(found.node ?? "none", privacy: .public) \(found.nodeVersion ?? "", privacy: .public)")
-            login = found
-            loginError = nil
-            return .success(StatusClient(login: found))
+            return .success(try await LoginEnvironment.resolve(nodeOverride: nodeOverride))
         } catch let error as LoginEnvironment.Failure {
-            log.error("\(error.description, privacy: .public)")
-            loginError = error.description
             return .failure(error)
         } catch {
-            loginError = String(describing: error)
             return .failure(.notFound(String(describing: error)))
         }
+    }
+
+    /// Forget the login environment (node path changed, or woke from sleep): the next client()
+    /// looks it up again.
+    private func resetLogin() {
+        login = nil
+        resolving = nil
     }
 
     // MARK: inbox

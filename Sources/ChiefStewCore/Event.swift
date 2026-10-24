@@ -86,9 +86,7 @@ public struct Event: Sendable, Equatable {
 
     /// The event as contract JSON (§3.1), as written to the journal.
     public var json: [String: Any] {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var d: [String: Any] = ["v": 1, "ts": f.string(from: ts), "kind": kind, "repo": repo]
+        var d: [String: Any] = ["v": 1, "ts": LooseDate.iso[0].string(from: ts), "kind": kind, "repo": repo]
         let optional: [String: Any?] = [
             "id": id, "producer": producer, "worktree": worktree, "build": build, "slug": slug, "lane": lane, "phase": phase,
             "gate": gate, "session": session, "agent": agent, "notification_type": notificationType,

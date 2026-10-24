@@ -6,21 +6,29 @@ import Foundation
 public enum LooseDate {
     public static func parse(_ s: String) -> Date? {
         let t = s.trimmingCharacters(in: .whitespaces)
-        for options: ISO8601DateFormatter.Options in [
-            [.withInternetDateTime, .withFractionalSeconds], [.withInternetDateTime],
-        ] {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = options
-            if let d = f.date(from: t) { return d }
-        }
-        for format in ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"] {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = .current
-            f.dateFormat = format
-            if let d = f.date(from: t) { return d }
-        }
+        for f in iso { if let d = f.date(from: t) { return d } }
+        for f in local { if let d = f.date(from: t) { return d } }
         return nil
+    }
+
+    /// Made once: a formatter is slow to create, and this runs for every event and status date.
+    /// Both are thread-safe for parsing. The local ones follow the Mac's time zone as it changes.
+    nonisolated(unsafe) static let iso: [ISO8601DateFormatter] = [
+        [.withInternetDateTime, .withFractionalSeconds], [.withInternetDateTime],
+    ].map { (options: ISO8601DateFormatter.Options) in
+        let f = ISO8601DateFormatter()
+        f.formatOptions = options
+        return f
+    }
+
+    nonisolated(unsafe) static let local: [DateFormatter] = [
+        "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd",
+    ].map { format in
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .autoupdatingCurrent
+        f.dateFormat = format
+        return f
     }
 
     /// `2026-10-06`, with no time of day: it parses as local midnight, which isn't when it was.

@@ -53,6 +53,11 @@ struct AddRepoWizard: View {
         .padding(24)
         .frame(width: 560)
         .onExitCommand { close() }  // Esc closes too; the repo stays added
+        // Closing Settings with the sheet open skips close(): stop the 2 s watch all the same.
+        .onDisappear {
+            watcher?.cancel()
+            checkTask?.cancel()
+        }
         .onAppear {
             model.refreshHooksState()
             if let preset = model.wizardRepo {

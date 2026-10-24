@@ -150,9 +150,10 @@ public struct EventJournal: Sendable {
         for file in [previous, url] {
             guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             for line in text.split(separator: "\n") {
-                guard let e = try? Event.parse(Data(line.utf8), fallbackDate: .distantPast),
-                    now.timeIntervalSince(e.ts) < Self.replayWindow
-                else { continue }
+                // This runs at launch, before the main run loop's pool exists: without a pool of
+                // its own, every line's parsed JSON stays in memory for the life of the app.
+                let e = autoreleasepool { try? Event.parse(Data(line.utf8), fallbackDate: .distantPast) }
+                guard let e, now.timeIntervalSince(e.ts) < Self.replayWindow else { continue }
                 events.append(e)
             }
         }
