@@ -12,7 +12,8 @@ public enum LooseDate {
     }
 
     /// Made once: a formatter is slow to create, and this runs for every event and status date.
-    /// Both are thread-safe for parsing. The local ones follow the Mac's time zone as it changes.
+    /// Both are thread-safe for parsing (ISO8601DateFormatter just isn't marked Sendable). The
+    /// local ones follow the Mac's time zone as it changes.
     nonisolated(unsafe) static let iso: [ISO8601DateFormatter] = [
         [.withInternetDateTime, .withFractionalSeconds], [.withInternetDateTime],
     ].map { (options: ISO8601DateFormatter.Options) in
@@ -21,7 +22,7 @@ public enum LooseDate {
         return f
     }
 
-    nonisolated(unsafe) static let local: [DateFormatter] = [
+    static let local: [DateFormatter] = [
         "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd",
     ].map { format in
         let f = DateFormatter()

@@ -41,6 +41,29 @@ import Testing
     #expect(g.current(now: t + 25 * 3600).isEmpty)  // forgotten after a day
 }
 
+@Test func pruningDropsWaitsAndDoubledReposADayOld() {
+    let t = iso("2026-09-30T14:00:00Z")
+    var state = EventState()
+    state.apply(Event(ts: t, kind: "gate.waiting", repo: "/r", build: "012", gate: "plan"))
+    state.apply(Event(ts: t + 23 * 3600, kind: "gate.waiting", repo: "/r", build: "013", gate: "plan"))
+    var hook = Event(ts: t, kind: "agent.stopped", repo: "/r", session: "s")
+    hook.producer = "chiefstew-hook"
+    state.apply(hook)
+    state.apply(Event(ts: t + 1, kind: "agent.stopped", repo: "/r", session: "s"))  // the repo's own copy
+    #expect(state.doubled["/r"] != nil)
+    state.prune(now: t + 25 * 3600)
+    #expect(state.gates.waits.values.map(\.build) == ["013"])
+    #expect(state.doubled.isEmpty)
+}
+
+@Test func theEngineCompilesEachPatternOnce() {
+    let a = WorkflowEngine.regex("^done$"), b = WorkflowEngine.regex("^done$")
+    #expect(a != nil && a === b)
+    #expect(WorkflowEngine.regex("^done$", options: []) !== a)  // options are part of the key
+    #expect(WorkflowEngine.regex("(") == nil && WorkflowEngine.regex("(") == nil)  // a bad one stays bad
+    #expect(WorkflowEngine.matches("^b", "a\nb"))  // still anchored per line
+}
+
 @Test func eventGatesShowOnlyWhereStatusCantShowThem() {
     let t = iso("2026-09-30T14:00:00Z")
     let wait = EventGates.Wait(repo: "/Users/you/my-app", build: "012", gate: "plan", slug: "thing", since: t)

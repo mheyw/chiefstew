@@ -19,6 +19,11 @@ private final class Box<T>: @unchecked Sendable {
     func get() -> T { lock.withLock { value } }
 }
 
+extension Box where T == Data {
+    /// In place: `set(get() + chunk)` would copy everything read so far on every chunk.
+    func append(_ chunk: Data) { lock.withLock { value.append(chunk) } }
+}
+
 /// Runs a child process off the main thread, with a timeout. No shell is involved.
 public enum CommandRunner {
     public static func run(
@@ -71,7 +76,7 @@ public enum CommandRunner {
                         drained.leave()
                     }
                 } else {
-                    box.set(box.get() + chunk)
+                    box.append(chunk)
                 }
             }
         }

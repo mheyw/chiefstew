@@ -42,7 +42,7 @@ private struct LabelHost: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        MenuBarLabel(state: model.board(now: model.tick).menu)
+        MenuBarLabel(state: model.menu)
             .task {
                 if model.takeReopenWindow() {
                     try? await Task.sleep(for: .milliseconds(600))

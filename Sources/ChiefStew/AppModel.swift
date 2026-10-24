@@ -15,17 +15,21 @@ final class AppModel {
     static let eventDebounce: Duration = .seconds(2)
     static let panelFreshness: TimeInterval = 10
 
-    private(set) var snapshots: [String: RepoSnapshot] = [:]
+    private(set) var snapshots: [String: RepoSnapshot] = [:] { didSet { updateMenu() } }
     /// Everything known from events. Agent state and event-only gates are folds over them.
-    private(set) var events = EventState()
+    private(set) var events = EventState() { didSet { updateMenu() } }
     var tracker: AgentTracker { events.agents }
-    private(set) var repos: [String]
+    private(set) var repos: [String] { didSet { updateMenu() } }
     /// Bumped by the poll loop so time-based state (needs-input expiry) re-evaluates.
-    private(set) var tick = Date()
+    private(set) var tick = Date() { didSet { updateMenu() } }
+    /// The menu-bar icon's state, written only when it changes: the label observes this alone,
+    /// not every input of the board, so a poll that finds something new elsewhere doesn't
+    /// re-render it.
+    private(set) var menu = Board.make(repos: [], agents: [], now: Date()).menu
     private(set) var permission: Notifier.Permission = .unknown
     private(set) var login: LoginEnvironment?
     /// What Claude Code says its sessions are doing; nil when `claude` can't be found or read.
-    private(set) var claude: ClaudeSessions?
+    private(set) var claude: ClaudeSessions? { didSet { updateMenu() } }
     private(set) var loginError: String?
     var settingsTab: SettingsTab = .repos
     static let boardWindowID = "board"
@@ -91,6 +95,12 @@ final class AppModel {
             for e in replayed { events.apply(Self.sanitized(e)) }
         }
         events.prune(now: Date())
+        updateMenu()  // observers don't run in init
+    }
+
+    private func updateMenu() {
+        let next = board(now: tick).menu
+        if next != menu { menu = next }
     }
 
     /// A worktree outside the event's repo is dropped: an event can't point Chief Stew at an
@@ -868,14 +878,18 @@ final class AppModel {
         }
         // Every event goes into state, registered repo or not: the board decides what to show
         // and the planner what to notify, so nothing posts straight from an event.
+        // Applied to a copy and written once, so a drain is one change to observe, and a drain
+        // of copies already handled is none.
+        var state = events
         var applied: [Event] = []
         for event in result.events.map(Self.sanitized) {
-            guard events.apply(event) else { continue }  // a copy of one already handled
+            guard state.apply(event) else { continue }  // a copy of one already handled
             applied.append(event)
             if let repo = registered(event.repo) { scheduleRefresh(repo) }
         }
         journal.append(applied)
         if !applied.isEmpty {
+            events = state
             saveAgents()
             updateNotifications()  // agent needs-input notifies straight away
             dumpDebugState()

@@ -508,7 +508,7 @@ public struct WorkflowEngine: Sendable {
         // budget
         if let rule = spec.budget, let pattern = rule.match {
             let (text, file, why, _) = read(rule.at, base: base, c)
-            if let text, let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]),
+            if let text, let re = Self.regex(pattern),
                 let m = re.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length))
             {
                 let ns = text as NSString
@@ -657,7 +657,7 @@ public struct WorkflowEngine: Sendable {
             rest = rest[rest.index(after: close)...]
         }
         out += NSRegularExpression.escapedPattern(for: String(rest)).replacingOccurrences(of: "\\*", with: ".*") + "$"
-        return try? NSRegularExpression(pattern: out)
+        return regex(out, options: [])
     }
 
     static func groups(_ re: NSRegularExpression, _ s: String) -> [String: String]? {
@@ -680,9 +680,18 @@ public struct WorkflowEngine: Sendable {
     }
 
     static func matches(_ pattern: String, _ s: String) -> Bool {
-        (try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]))?
-            .firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
+        regex(pattern)?.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
     }
+
+    /// A description's patterns, compiled once rather than on every row of every poll.
+    static func regex(_ pattern: String, options: NSRegularExpression.Options = [.anchorsMatchLines])
+        -> NSRegularExpression?
+    {
+        regexCache.get("\(options.rawValue) \(pattern)") { try? NSRegularExpression(pattern: pattern, options: options) }
+    }
+
+    private static let regexCache = RegexCache()
+    static let groupNamePattern = try! NSRegularExpression(pattern: "\\(\\?<([A-Za-z][A-Za-z0-9]*)>")
 
     /// The body under a markdown heading named `heading`, up to the next heading of the same
     /// or a higher level.
@@ -705,7 +714,7 @@ public struct WorkflowEngine: Sendable {
     }
 
     static func extract(_ text: String, pick: WorkflowSpec.Pick?, match: String?, group: String) -> String? {
-        if let match, let re = try? NSRegularExpression(pattern: match, options: [.anchorsMatchLines]) {
+        if let match, let re = Self.regex(match) {
             let ns = text as NSString
             guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
             let named = m.range(withName: group)
@@ -750,7 +759,7 @@ public struct WorkflowEngine: Sendable {
         case .checkboxes:
             return checkboxes(text).map { ["done": $0.done ? "x" : " ", "name": $0.text, "gate": $0.text] }
         case .regex(let pattern):
-            guard let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return [] }
+            guard let re = Self.regex(pattern) else { return [] }
             let names = groupNames(pattern)
             return text.components(separatedBy: "\n").compactMap { line in
                 let ns = line as NSString
@@ -766,9 +775,8 @@ public struct WorkflowEngine: Sendable {
     }
 
     static func groupNames(_ pattern: String) -> [String] {
-        guard let re = try? NSRegularExpression(pattern: "\\(\\?<([A-Za-z][A-Za-z0-9]*)>") else { return [] }
         let ns = pattern as NSString
-        return re.matches(in: pattern, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) }
+        return groupNamePattern.matches(in: pattern, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) }
     }
 
     static func isDone(_ s: String) -> Bool { ["x", "X", "true", "done", "yes"].contains(s.trimmingCharacters(in: .whitespaces)) }
@@ -825,4 +833,22 @@ public struct WorkflowEngine: Sendable {
     }
 
     static func mark(_ status: String) -> String { status == "done" ? "✓" : status == "active" ? "◐" : "○" }
+}
+
+/// Compiled patterns by key, shared by engine runs on any thread. The patterns come from the
+/// registered repos' descriptions, so the set is small; it's cleared if it ever grows past `limit`.
+final class RegexCache: @unchecked Sendable {
+    static let limit = 512
+    private let lock = NSLock()
+    private var compiled: [String: NSRegularExpression?] = [:]
+
+    func get(_ key: String, _ make: () -> NSRegularExpression?) -> NSRegularExpression? {
+        if let hit = lock.withLock({ compiled[key] }) { return hit }
+        let re = make()
+        lock.withLock {
+            if compiled.count >= Self.limit { compiled.removeAll() }
+            compiled[key] = re
+        }
+        return re
+    }
 }

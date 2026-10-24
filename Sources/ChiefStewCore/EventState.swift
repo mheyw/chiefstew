@@ -35,6 +35,11 @@ public struct EventGates: Sendable, Equatable {
         }
     }
 
+    /// A wait nobody closed is forgotten after a day, as `current` already hides it.
+    public mutating func prune(now: Date) {
+        waits = waits.filter { now.timeIntervalSince($0.value.since) < Self.forgetAfter }
+    }
+
     public func current(now: Date) -> [Wait] {
         waits.values.filter { now.timeIntervalSince($0.since) < Self.forgetAfter }
             .sorted { ($0.since, $0.build, $0.gate) < ($1.since, $1.build, $1.gate) }
@@ -106,6 +111,8 @@ public struct EventState: Sendable, Equatable {
     public mutating func prune(now: Date) {
         agents.prune(now: now)
         lastAgent = lastAgent.filter { now.timeIntervalSince($0.value.ts) < 24 * 3600 }
+        gates.prune(now: now)
+        doubled = doubled.filter { now.timeIntervalSince($0.value) < 24 * 3600 }
     }
 }
 
