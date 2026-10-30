@@ -51,8 +51,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if notice.passive { content.interruptionLevel = .passive }
         content.threadIdentifier = "chiefstew"
         if let open = notice.open { content.userInfo = ["open": open] }
+        // A completion handler, not `await`, so the add is queued before any withdraw that
+        // follows. `@Sendable` because it's called off the main thread: without it, older
+        // compilers make it main-actor and the app traps (see architecture.md).
         center.add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil)) {
-            [log] error in
+            @Sendable [log] error in
             if let error { log.error("post failed: \(error.localizedDescription, privacy: .public)") }
         }
     }
