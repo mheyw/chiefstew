@@ -573,6 +573,16 @@ extension Board {
             repoPath: repo.path, budget: row.budget, mine: row.mine)
     }
 
+    /// `folder · branch · reason`: the folder relative to the repo, or its own name when it sits
+    /// beside the repo (a sibling worktree), and only the parts the sweep sent.
+    static func worktreeLine(_ w: SweepReport.Worktree, repoPath: String) -> String {
+        let rel = PathMatch.relative(w.path, to: repoPath)
+        let folder = rel.hasPrefix("/") ? (rel as NSString).lastPathComponent : rel
+        return [folder, w.branch, w.reason]
+            .compactMap { $0.flatMap { $0.isEmpty ? nil : $0 } }
+            .joined(separator: " · ")
+    }
+
     static func leftItems(repo: RepoSnapshot, sweep: SweepReport) -> [LeftItem] {
         var items: [LeftItem] = []
         let leaked = sweep.databases?.leaked ?? []
@@ -590,6 +600,17 @@ extension Board {
                     id: "\(repo.path)#stacks", repoName: repo.name,
                     title: stacks.count == 1 ? "1 leaked stack" : "\(stacks.count) leaked stacks",
                     details: stacks, command: nil, repoPath: repo.path))
+        }
+        if !sweep.worktrees.isEmpty {
+            let n = sweep.worktrees.count
+            // One tree: its own next step is the row's command. Several: each line names its tree,
+            // and the commands stay with the sweep's `cleanup`, which the row's section shows.
+            items.append(
+                LeftItem(
+                    id: "\(repo.path)#worktrees", repoName: repo.name,
+                    title: n == 1 ? "1 worktree left" : "\(n) worktrees left",
+                    details: sweep.worktrees.map { worktreeLine($0, repoPath: repo.path) },
+                    command: n == 1 ? sweep.worktrees[0].next : nil, repoPath: repo.path))
         }
         if !sweep.processes.isEmpty {
             let n = sweep.processes.count

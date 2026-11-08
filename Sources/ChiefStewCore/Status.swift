@@ -280,19 +280,56 @@ public struct SweepReport: Decodable, Sendable, Equatable {
     public var stacks: Databases?
     public var routes: [Route]
     public var processes: [Proc]
+    /// Finished worktrees the sweep kept or would remove, each with why and what to run.
+    public var worktrees: [Worktree]
     public var cleanup: [String]
     public var errors: [String]
 
     public init(
         databases: Databases? = nil, stacks: Databases? = nil, routes: [Route] = [],
-        processes: [Proc] = [], cleanup: [String] = [], errors: [String] = []
+        processes: [Proc] = [], worktrees: [Worktree] = [], cleanup: [String] = [],
+        errors: [String] = []
     ) {
         self.databases = databases
         self.stacks = stacks
         self.routes = routes
         self.processes = processes
+        self.worktrees = worktrees
         self.cleanup = cleanup
         self.errors = errors
+    }
+
+    public struct Worktree: Decodable, Sendable, Equatable {
+        public var path: String
+        public var branch: String?
+        /// Why it is still there (every reason, as the sweep wrote them).
+        public var reason: String?
+        /// The command the owner runs next, if there is one.
+        public var next: String?
+        /// The sweep's own `--apply` would remove it.
+        public var removable: Bool?
+
+        public init(
+            path: String, branch: String? = nil, reason: String? = nil, next: String? = nil,
+            removable: Bool? = nil
+        ) {
+            self.path = path
+            self.branch = branch
+            self.reason = reason
+            self.next = next
+            self.removable = removable
+        }
+
+        enum CodingKeys: String, CodingKey { case path, branch, reason, next, removable }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            path = try c.decode(String.self, forKey: .path)
+            branch = c.lenient(String.self, .branch)
+            reason = c.lenient(String.self, .reason)
+            next = c.lenient(String.self, .next)
+            removable = c.lenient(Bool.self, .removable)
+        }
     }
 
     public struct Databases: Decodable, Sendable, Equatable {
@@ -349,7 +386,9 @@ public struct SweepReport: Decodable, Sendable, Equatable {
         }
     }
 
-    enum CodingKeys: String, CodingKey { case v, databases, stacks, routes, processes, cleanup, errors }
+    enum CodingKeys: String, CodingKey {
+        case v, databases, stacks, routes, processes, worktrees, cleanup, errors
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -359,6 +398,7 @@ public struct SweepReport: Decodable, Sendable, Equatable {
         stacks = c.lenient(Databases.self, .stacks)
         routes = c.lenient([Route].self, .routes) ?? []
         processes = c.lenient([Proc].self, .processes) ?? []
+        worktrees = c.lenient([Worktree].self, .worktrees) ?? []
         cleanup = c.lenient([String].self, .cleanup) ?? []
         errors = c.lenient([String].self, .errors) ?? []
     }

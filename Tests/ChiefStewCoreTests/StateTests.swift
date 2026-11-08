@@ -327,6 +327,45 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     #expect(b.leftCleanup == ["make clean-stacks"])
 }
 
+// The sweep's finished worktrees: one row, a line per tree (folder · branch · reason), and the
+// tree's own next step as the command when there is only one.
+@Test func worktreesLeftFromSweep() throws {
+    let json = """
+        {"v":1,"worktrees":[
+          {"path":"/Users/you/my-app.fix-b","branch":"fix/b","build":"","removable":false,
+           "reason":"on fix/b, not a build branch; its work is on main",
+           "next":"make remove-tree TREE=/Users/you/my-app.fix-b"},
+          {"path":"/Users/you/my-app/.trees/c","branch":"","removable":true,"reason":""}],
+         "cleanup":["make sweep-apply"]}
+        """
+    let sweep = try JSONDecoder().decode(SweepReport.self, from: Data(json.utf8))
+    #expect(sweep.worktrees.count == 2)
+    #expect(sweep.worktrees[1].removable == true)
+    let b = try fullBoard(sweep: sweep)
+    #expect(b.leftBehind.map(\.title) == ["2 worktrees left"])
+    #expect(b.leftBehind[0].details == [
+        "my-app.fix-b · fix/b · on fix/b, not a build branch; its work is on main",
+        ".trees/c",
+    ])
+    #expect(b.leftBehind[0].command == nil)
+    #expect(b.leftCleanup == ["make sweep-apply"])
+
+    let one = try JSONDecoder().decode(
+        SweepReport.self,
+        from: Data(#"{"v":1,"worktrees":[{"path":"/Users/you/my-app.fix-b","next":"make remove-tree"}]}"#.utf8))
+    let b1 = try fullBoard(sweep: one)
+    #expect(b1.leftBehind.map(\.title) == ["1 worktree left"])
+    #expect(b1.leftBehind[0].command == "make remove-tree")
+}
+
+// An older sweep with no `worktrees` key decodes as before: no row.
+@Test func aSweepWithoutWorktreesHasNoWorktreeRow() throws {
+    let sweep = try JSONDecoder().decode(
+        SweepReport.self, from: Data(#"{"v":1,"stacks":{"checked":true,"leaked":[]}}"#.utf8))
+    #expect(sweep.worktrees.isEmpty)
+    #expect(try fullBoard(sweep: sweep).leftBehind.isEmpty)
+}
+
 // A route whose process still runs survives `portless prune`-style cleanup, so the row offers the
 // kill. A pid the processes row already kills isn't named twice; a route not marked running gets none.
 @Test func strayRoutesStillRunningOfferTheirKill() throws {

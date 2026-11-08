@@ -280,6 +280,10 @@ The sweep command reports leftovers from finished work. It only reports; it neve
     { "hostname": "fix-c.my-app.localhost", "reason": "no checkout for fix-c", "pid": 5530, "running": true }
   ],
   "processes": [ { "pid": 67816, "cwd": "/Users/you/my-app/.claude/worktrees/129" } ],
+  "worktrees": [
+    { "path": "/Users/you/my-app.fix-b", "branch": "fix/b", "removable": false,
+      "reason": "on fix/b; its work is on main", "next": "make remove-tree TREE=/Users/you/my-app.fix-b" }
+  ],
   "cleanup": ["make clean-worktree-dbs", "portless prune"],
   "errors": []
 }
@@ -288,6 +292,7 @@ The sweep command reports leftovers from finished work. It only reports; it neve
 - Every field is optional. If a check couldn't run (e.g. Docker is down), say so in `errors` and still exit 0.
 - `databases` and `stacks` have the same shape: `checked` (did the check run) and `leaked` (names). Send `databases` for leaked databases alone, `stacks` for whole leaked stacks (containers, volumes and the databases in them); Chief Stew shows each as its own row. Other keys inside them (e.g. a `claimed` count) are ignored.
 - A route's `pid` is the process that registered it; `running: true` says that process is still alive. A route tool that drops only routes whose process is gone (e.g. `portless prune`) keeps such a route, so Chief Stew offers `kill <pid>` on the stray-routes row, shown before the `cleanup` commands. Leave `running` out, or set it false, when the process is gone: Chief Stew never offers a kill without it.
+- `worktrees` lists finished worktrees still on disk: `path` (required), and optionally `branch`, `reason` (why it is still there), `next` (the command to run next) and `removable` (the repo's own cleanup would remove it). Chief Stew shows one "N worktrees left" row, a line per tree (`folder · branch · reason`), and the tree's `next` as the row's command when there is one tree. This is a different key from § 4's per-build `worktrees`, which names other checkouts working on one build. (From v0.2.14.)
 - `cleanup` lists commands the owner can run. Chief Stew shows and copies them but never runs them.
 - Chief Stew runs the sweep once status first succeeds, then every 15 minutes and on Refresh.
 
