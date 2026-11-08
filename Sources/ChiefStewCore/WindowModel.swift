@@ -94,6 +94,7 @@ extension Board {
         }
         let words: [String: (String, String)] = [
             "dbs": ("leaked database", "leaked databases"),
+            "stacks": ("leaked stack", "leaked stacks"),
             "procs": ("process in a deleted folder", "processes in deleted folders"),
             "routes": ("stray route", "stray routes"),
         ]

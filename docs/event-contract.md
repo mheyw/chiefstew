@@ -19,7 +19,7 @@ A repo can do any subset:
 |---|---|
 | Nothing | Its agents: which session is asking a question or needs permission (from Chief Stew's own Claude Code hooks), and which is working (from Claude Code's own session list). |
 | A status command | Its builds as well: phases, gates waiting for sign-off, tasks, parked and unmerged work |
-| A sweep command | Leftovers too: leaked databases, stray processes and routes |
+| A sweep command | Leftovers too: leaked databases or stacks, stray processes and routes |
 | Events from its scripts | Gates and phase changes appear at once, not at the next poll |
 | A roadmap description | The plan around its builds: what's shipped, what's marked next and what's still to come (§4c) |
 
@@ -274,6 +274,7 @@ The sweep command reports leftovers from finished work. It only reports; it neve
 {
   "v": 1,
   "databases": { "checked": true, "leaked": ["myapp_wt_fix_b"] },
+  "stacks": { "checked": true, "leaked": ["myapp-wt-fix-c"] },
   "routes": [
     { "hostname": "fix-b.my-app.localhost", "reason": "process 5512 is gone" },
     { "hostname": "fix-c.my-app.localhost", "reason": "no checkout for fix-c", "pid": 5530, "running": true }
@@ -285,6 +286,7 @@ The sweep command reports leftovers from finished work. It only reports; it neve
 ```
 
 - Every field is optional. If a check couldn't run (e.g. Docker is down), say so in `errors` and still exit 0.
+- `databases` and `stacks` have the same shape: `checked` (did the check run) and `leaked` (names). Send `databases` for leaked databases alone, `stacks` for whole leaked stacks (containers, volumes and the databases in them); Chief Stew shows each as its own row. Other keys inside them (e.g. a `claimed` count) are ignored.
 - A route's `pid` is the process that registered it; `running: true` says that process is still alive. A route tool that drops only routes whose process is gone (e.g. `portless prune`) keeps such a route, so Chief Stew offers `kill <pid>` on the stray-routes row, shown before the `cleanup` commands. Leave `running` out, or set it false, when the process is gone: Chief Stew never offers a kill without it.
 - `cleanup` lists commands the owner can run. Chief Stew shows and copies them but never runs them.
 - Chief Stew runs the sweep once status first succeeds, then every 15 minutes and on Refresh.

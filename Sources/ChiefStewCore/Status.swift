@@ -276,16 +276,19 @@ public struct TaskCount: Decodable, Sendable, Equatable {
 
 public struct SweepReport: Decodable, Sendable, Equatable {
     public var databases: Databases?
+    /// Whole leaked stacks (containers, volumes and their databases), same shape as `databases`.
+    public var stacks: Databases?
     public var routes: [Route]
     public var processes: [Proc]
     public var cleanup: [String]
     public var errors: [String]
 
     public init(
-        databases: Databases? = nil, routes: [Route] = [], processes: [Proc] = [],
-        cleanup: [String] = [], errors: [String] = []
+        databases: Databases? = nil, stacks: Databases? = nil, routes: [Route] = [],
+        processes: [Proc] = [], cleanup: [String] = [], errors: [String] = []
     ) {
         self.databases = databases
+        self.stacks = stacks
         self.routes = routes
         self.processes = processes
         self.cleanup = cleanup
@@ -346,13 +349,14 @@ public struct SweepReport: Decodable, Sendable, Equatable {
         }
     }
 
-    enum CodingKeys: String, CodingKey { case v, databases, routes, processes, cleanup, errors }
+    enum CodingKeys: String, CodingKey { case v, databases, stacks, routes, processes, cleanup, errors }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let v = try c.decode(Int.self, forKey: .v)
         guard v == 1 else { throw ReportError.wrongVersion(v) }
         databases = c.lenient(Databases.self, .databases)
+        stacks = c.lenient(Databases.self, .stacks)
         routes = c.lenient([Route].self, .routes) ?? []
         processes = c.lenient([Proc].self, .processes) ?? []
         cleanup = c.lenient([String].self, .cleanup) ?? []

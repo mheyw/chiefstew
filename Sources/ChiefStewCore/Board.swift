@@ -583,6 +583,14 @@ extension Board {
                     title: leaked.count == 1 ? "1 leaked database" : "\(leaked.count) leaked databases",
                     details: leaked, command: nil, repoPath: repo.path))
         }
+        let stacks = sweep.stacks?.leaked ?? []
+        if !stacks.isEmpty {
+            items.append(
+                LeftItem(
+                    id: "\(repo.path)#stacks", repoName: repo.name,
+                    title: stacks.count == 1 ? "1 leaked stack" : "\(stacks.count) leaked stacks",
+                    details: stacks, command: nil, repoPath: repo.path))
+        }
         if !sweep.processes.isEmpty {
             let n = sweep.processes.count
             items.append(

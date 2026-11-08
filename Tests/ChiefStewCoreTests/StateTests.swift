@@ -312,6 +312,21 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     #expect(!b.menu.unreadable)
 }
 
+// A sweep that reports whole leaked stacks under `stacks` (and no `databases`) shows them.
+@Test func leakedStacksFromSweep() throws {
+    let json = """
+        {"v":1,"stacks":{"checked":true,"claimed":2,"leaked":["myapp-wt-fix-b","myapp-wt-fix-c"]},
+         "cleanup":["make clean-stacks"]}
+        """
+    let sweep = try JSONDecoder().decode(SweepReport.self, from: Data(json.utf8))
+    #expect(sweep.stacks?.leaked == ["myapp-wt-fix-b", "myapp-wt-fix-c"])
+    let b = try fullBoard(sweep: sweep)
+    #expect(b.leftBehind.map(\.title) == ["2 leaked stacks"])
+    #expect(b.leftBehind[0].details == ["myapp-wt-fix-b", "myapp-wt-fix-c"])
+    #expect(b.leftSummary == "2 leaked stacks")
+    #expect(b.leftCleanup == ["make clean-stacks"])
+}
+
 // A route whose process still runs survives `portless prune`-style cleanup, so the row offers the
 // kill. A pid the processes row already kills isn't named twice; a route not marked running gets none.
 @Test func strayRoutesStillRunningOfferTheirKill() throws {
