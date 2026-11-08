@@ -274,7 +274,10 @@ The sweep command reports leftovers from finished work. It only reports; it neve
 {
   "v": 1,
   "databases": { "checked": true, "leaked": ["myapp_wt_fix_b"] },
-  "routes": [ { "hostname": "fix-b.my-app.localhost", "reason": "process 5512 is gone" } ],
+  "routes": [
+    { "hostname": "fix-b.my-app.localhost", "reason": "process 5512 is gone" },
+    { "hostname": "fix-c.my-app.localhost", "reason": "no checkout for fix-c", "pid": 5530, "running": true }
+  ],
   "processes": [ { "pid": 67816, "cwd": "/Users/you/my-app/.claude/worktrees/129" } ],
   "cleanup": ["make clean-worktree-dbs", "portless prune"],
   "errors": []
@@ -282,6 +285,7 @@ The sweep command reports leftovers from finished work. It only reports; it neve
 ```
 
 - Every field is optional. If a check couldn't run (e.g. Docker is down), say so in `errors` and still exit 0.
+- A route's `pid` is the process that registered it; `running: true` says that process is still alive. A route tool that drops only routes whose process is gone (e.g. `portless prune`) keeps such a route, so Chief Stew offers `kill <pid>` on the stray-routes row, shown before the `cleanup` commands. Leave `running` out, or set it false, when the process is gone: Chief Stew never offers a kill without it.
 - `cleanup` lists commands the owner can run. Chief Stew shows and copies them but never runs them.
 - Chief Stew runs the sweep once status first succeeds, then every 15 minutes and on Refresh.
 

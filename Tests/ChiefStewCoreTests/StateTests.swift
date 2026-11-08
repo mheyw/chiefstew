@@ -312,6 +312,28 @@ func fullBoard(agents: [AgentState] = [], sweep: SweepReport? = nil, error: Repo
     #expect(!b.menu.unreadable)
 }
 
+// A route whose process still runs survives `portless prune`-style cleanup, so the row offers the
+// kill. A pid the processes row already kills isn't named twice; a route not marked running gets none.
+@Test func strayRoutesStillRunningOfferTheirKill() throws {
+    let json = """
+        {"v":1,
+         "processes":[{"pid":7,"cwd":"/gone"}],
+         "routes":[{"hostname":"a.my-app.localhost","pid":5512,"running":true,"reason":"no live worktree"},
+                   {"hostname":"b.my-app.localhost","pid":5513,"running":true},
+                   {"hostname":"c.my-app.localhost","pid":7,"running":true},
+                   {"hostname":"d.my-app.localhost","pid":9,"running":false,"reason":"process 9 is gone"},
+                   {"hostname":"e.my-app.localhost","pid":11}],
+         "cleanup":["portless prune"]}
+        """
+    let sweep = try JSONDecoder().decode(SweepReport.self, from: Data(json.utf8))
+    let routes = try #require(try fullBoard(sweep: sweep).leftBehind.first { $0.title == "5 stray routes" })
+    #expect(routes.command == "kill 5512 5513")
+    #expect(routes.details[0] == "a.my-app.localhost · no live worktree · pid 5512 still running")
+
+    let dead = SweepReport(routes: [.init(hostname: "d.my-app.localhost", pid: 9, running: false)])
+    #expect(try fullBoard(sweep: dead).leftBehind.first?.command == nil)
+}
+
 @Test func leftBehindAloneIsAWarningButNotUnreadable() throws {
     let b = try fullBoard(sweep: SweepReport(processes: [.init(pid: 1, cwd: "/gone")]))
     #expect(b.menu.warning)

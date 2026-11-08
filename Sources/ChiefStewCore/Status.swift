@@ -313,10 +313,26 @@ public struct SweepReport: Decodable, Sendable, Equatable {
     public struct Route: Decodable, Sendable, Equatable {
         public var hostname: String
         public var reason: String?
+        /// The process that registered the route.
+        public var pid: Int?
+        /// That process is still running: removing the route needs it stopped first.
+        public var running: Bool?
 
-        public init(hostname: String, reason: String? = nil) {
+        public init(hostname: String, reason: String? = nil, pid: Int? = nil, running: Bool? = nil) {
             self.hostname = hostname
             self.reason = reason
+            self.pid = pid
+            self.running = running
+        }
+
+        enum CodingKeys: String, CodingKey { case hostname, reason, pid, running }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            hostname = try c.decode(String.self, forKey: .hostname)
+            reason = c.lenient(String.self, .reason)
+            pid = c.lenient(Int.self, .pid)
+            running = c.lenient(Bool.self, .running)
         }
     }
 

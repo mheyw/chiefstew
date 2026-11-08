@@ -598,14 +598,24 @@ extension Board {
         }
         if !sweep.routes.isEmpty {
             let n = sweep.routes.count
+            // A route whose process still runs outlives a prune of dead routes: offer its kill,
+            // leaving out any pid the processes row already kills.
+            let killed = Set(sweep.processes.map(\.pid))
+            var live: [Int] = []
+            for r in sweep.routes where r.running == true {
+                if let pid = r.pid, !killed.contains(pid), !live.contains(pid) { live.append(pid) }
+            }
             items.append(
                 LeftItem(
                     id: "\(repo.path)#routes", repoName: repo.name,
                     title: n == 1 ? "1 stray route" : "\(n) stray routes",
                     details: sweep.routes.map { r in
-                        r.reason.map { "\(r.hostname) · \($0)" } ?? r.hostname
+                        var line = r.reason.map { "\(r.hostname) · \($0)" } ?? r.hostname
+                        if r.running == true, let pid = r.pid { line += " · pid \(pid) still running" }
+                        return line
                     },
-                    command: nil, repoPath: repo.path))
+                    command: live.isEmpty ? nil : "kill " + live.map(String.init).joined(separator: " "),
+                    repoPath: repo.path))
         }
         return items
     }
