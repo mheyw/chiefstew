@@ -64,6 +64,10 @@ public struct WorkflowSpec: Sendable, Equatable {
     public var lane: TextRule?
     public var parked: String?
     public var closed: String?
+    /// Branch builds only: a regex on the state line as the main branch's copy of the build's
+    /// files says it. A match means merged, for a squash merge whose branch git can't tie to
+    /// main once main has edited the same lines (a merge record written after the merge).
+    public var merged: String?
     /// Folder builds only: finished. A folder is never merged, so this is what takes it out of
     /// status (contract § 4b: builds in flight only); a roadmap still lists it.
     public var done: String?
@@ -81,7 +85,7 @@ public struct WorkflowSpec: Sendable, Equatable {
 
     public static func == (a: WorkflowSpec, b: WorkflowSpec) -> Bool {
         a.builds == b.builds && a.includeRemote == b.includeRemote && a.folder == b.folder && a.state == b.state && a.lane == b.lane
-            && a.title == b.title && a.parked == b.parked && a.closed == b.closed && a.done == b.done
+            && a.title == b.title && a.parked == b.parked && a.closed == b.closed && a.merged == b.merged && a.done == b.done
             && a.phases == b.phases
             && a.skip?.lane == b.skip?.lane && a.skip?.phases == b.skip?.phases && a.gates == b.gates
             && a.tasks == b.tasks && a.tasksPhases == b.tasksPhases && a.budget == b.budget
@@ -112,7 +116,7 @@ public struct WorkflowSpec: Sendable, Equatable {
             return .failure(Problems(list: [Problem(path: "workflow", message: "must be an object")]))
         }
         let known: Set<String> = [
-            "builds", "folder", "state", "title", "lane", "parked", "closed", "done", "phases", "gates", "tasks", "budget",
+            "builds", "folder", "state", "title", "lane", "parked", "closed", "merged", "done", "phases", "gates", "tasks", "budget",
         ]
         for key in w.keys.sorted() where !known.contains(key) {
             unknown("workflow.\(key)", known)
@@ -145,7 +149,7 @@ public struct WorkflowSpec: Sendable, Equatable {
             "state": ["file", "section", "pick", "match", "default"],
             "title": ["file", "section", "pick", "match"],
             "lane": ["file", "section", "pick", "match", "default"],
-            "parked": ["state"], "closed": ["state"], "done": ["state"],
+            "parked": ["state"], "closed": ["state"], "merged": ["state"], "done": ["state"],
             "phases": ["file", "section", "list", "skip"],
             "gates": ["file", "section", "list", "phase", "artefact", "approve"],
             "tasks": ["file", "section", "count", "phase"],
@@ -219,6 +223,13 @@ public struct WorkflowSpec: Sendable, Equatable {
         spec.lane = textRule("lane")
         spec.parked = stateRegex("parked")
         spec.closed = stateRegex("closed")
+        if w["merged"] != nil, let re = stateRegex("merged") {
+            if case .folders = spec.builds {
+                fail("workflow.merged", "only for builds from branches or worktrees; a folder is never merged (use done)")
+            } else if spec.state == nil {
+                fail("workflow.merged", "needs workflow.state: it's matched against the state line")
+            } else { spec.merged = re }
+        }
         if w["title"] != nil { spec.title = textRule("title") }
         if w["done"] != nil, let re = stateRegex("done") {
             // A branch or worktree is finished when it's merged; one that's done but not merged

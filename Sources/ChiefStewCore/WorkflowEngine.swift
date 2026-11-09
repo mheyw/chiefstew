@@ -245,6 +245,31 @@ public struct WorkflowEngine: Sendable {
         return git.changesNothing(ref, into: target) ? target : nil
     }
 
+    /// As above, then the repo's own record: main's copy of the build's state line matches
+    /// `workflow.merged`, and the branch has no commit since main last wrote that line. That
+    /// catches a squash merge after main has edited the same lines, which git alone can't.
+    func mergedInto(_ c: Candidate, main: String, upstream: String?) -> String? {
+        if let into = mergedInto(c.ref, main: main, upstream: upstream) { return into }
+        let target = upstream ?? main
+        return recordedMerged(c, on: target) ? target : nil
+    }
+
+    func recordedMerged(_ c: Candidate, on target: String) -> Bool {
+        guard let re = spec.merged, let rule = spec.state else { return false }
+        let onMain = Candidate(num: c.num, slug: c.slug, branch: c.branch, ref: target, worktree: nil)
+        var base = ""
+        if let folder = spec.folder {
+            guard let f = resolveFolder(Self.fill(folder, onMain, gate: nil), onMain) else { return false }
+            base = f
+        }
+        let (text, _, _, path) = read(rule.at, base: base, onMain)
+        guard let text, let path, let state = Self.extract(text, pick: rule.pick, match: rule.match, group: "state"),
+            Self.matches(re, Self.plain(state)),
+            let recorded = git.lastCommit(target, path: path)?.date, let tip = git.lastCommit(c.ref)?.date
+        else { return false }
+        return tip <= recorded
+    }
+
     func candidates(
         main: String, upstream: String? = nil, worktrees: [GitReader.Worktree], skipped: inout [String]
     ) -> [Candidate] {
@@ -277,14 +302,14 @@ public struct WorkflowEngine: Sendable {
                     skipped.append("\(branch): doesn't match \(pattern)")
                     continue
                 }
-                if byBranch[branch] == nil, let into = mergedInto(branch, main: main, upstream: upstream) {
+                let c = Candidate(
+                    num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch, ref: branch,
+                    worktree: byBranch[branch])
+                if byBranch[branch] == nil, let into = mergedInto(c, main: main, upstream: upstream) {
                     skipped.append("\(branch): already merged into \(into)")
                     continue
                 }
-                out.append(
-                    Candidate(
-                        num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch, ref: branch,
-                        worktree: byBranch[branch]))
+                out.append(c)
             }
             // Builds that only exist on origin (another machine, a teammate). Never fetched. By
             // default only recently active ones, so old abandoned branches don't pile up.
@@ -292,7 +317,10 @@ public struct WorkflowEngine: Sendable {
                 let local = Set(git.branches())
                 for branch in git.remoteBranches() where !local.contains(branch) && branch != main {
                     guard let g = Self.groups(re, branch) else { continue }
-                    if let into = mergedInto("origin/\(branch)", main: main, upstream: upstream) {
+                    let c = Candidate(
+                        num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch,
+                        ref: "origin/\(branch)", worktree: nil)
+                    if let into = mergedInto(c, main: main, upstream: upstream) {
                         skipped.append("origin/\(branch): already merged into \(into)")
                         continue
                     }
@@ -303,10 +331,7 @@ public struct WorkflowEngine: Sendable {
                             continue
                         }
                     }
-                    out.append(
-                        Candidate(
-                            num: g["num"] ?? g["slug"] ?? branch, slug: g["slug"] ?? branch, branch: branch,
-                            ref: "origin/\(branch)", worktree: nil))
+                    out.append(c)
                 }
             }
             attachOtherWorktrees(&out, main: main, worktrees: worktrees)

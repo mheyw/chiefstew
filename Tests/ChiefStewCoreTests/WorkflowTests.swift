@@ -592,3 +592,87 @@ private func commit(_ dir: URL, as name: String, _ email: String, _ message: Str
     #expect(!notes[0].contains("Draft started"))  // done: nothing to fix now
     #expect(!notes[1].contains("date only"))
 }
+
+private func commit(_ dir: URL, _ message: String, at date: String) throws {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    p.arguments = ["-C", dir.path, "commit", "-q", "-m", message]
+    p.environment = [
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t", "HOME": NSTemporaryDirectory(),
+        "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date,
+    ]
+    p.standardOutput = FileHandle.nullDevice
+    try p.run()
+    p.waitUntilExit()
+}
+
+/// A squash merge after which main rewrites the build's state line (a merge record): git can't
+/// tie the branch to main any more, so `merged` reads main's copy of the state line instead. A
+/// branch with a commit after that record is still in flight. One main never rewrote, git's own
+/// squash check already catches.
+@Test func aRecordedSquashMergeLeavesTheList() throws {
+    let (repo, _) = try sampleRepo()
+    let origin = repo.deletingLastPathComponent().appendingPathComponent("origin.git")
+    try run(repo.deletingLastPathComponent(), "init", "-q", "--bare", origin.path)
+    try run(repo, "remote", "add", "origin", origin.path)
+    try run(repo, "push", "-q", "origin", "main")
+    try run(repo, "remote", "set-head", "origin", "main")
+
+    for slug in ["recorded", "later", "unrecorded"] {
+        try run(repo, "checkout", "-q", "-b", "task/\(slug)", "main")
+        try write(repo, "work/\(slug)/state.md", "Closed\n")
+        try write(repo, "\(slug).txt", slug)
+        try run(repo, "add", ".")
+        try commit(repo, slug, at: "2030-01-01T10:00:00Z")
+        try run(repo, "push", "-q", "origin", "task/\(slug)")
+        try run(repo, "checkout", "-q", "main")
+        try run(repo, "branch", "-q", "-D", "task/\(slug)")
+    }
+    try run(repo, "checkout", "-q", "-b", "upstream", "main")
+    for slug in ["recorded", "later", "unrecorded"] {
+        try run(repo, "merge", "-q", "--squash", "origin/task/\(slug)")
+        try commit(repo, "\(slug) (squash)", at: "2030-01-01T11:00:00Z")
+    }
+    // The record: main rewrites the state line of two of them.
+    for slug in ["recorded", "later"] {
+        try write(repo, "work/\(slug)/state.md", "Closed, merged abc123\n")
+    }
+    try run(repo, "add", ".")
+    try commit(repo, "record merges", at: "2030-01-01T12:00:00Z")
+    try run(repo, "push", "-q", "origin", "upstream:main")
+    // `later` gets a commit after the record.
+    try run(repo, "checkout", "-q", "-b", "task/later", "origin/task/later")
+    try write(repo, "later.txt", "more")
+    try run(repo, "add", ".")
+    try commit(repo, "more", at: "2030-01-01T13:00:00Z")
+    try run(repo, "push", "-q", "origin", "task/later")
+    try run(repo, "checkout", "-q", "main")
+    try run(repo, "branch", "-q", "-D", "task/later")
+    try run(repo, "fetch", "-q", "origin")
+
+    let base: [String: Any] = [
+        "builds": ["from": "branches", "branch": "task/{slug}", "folder": "work/{slug}", "remote": true],
+        "state": ["file": "state.md"],
+    ]
+    var withMerged = base
+    withMerged["merged"] = ["state": "merged \\w+$"]
+
+    let without = WorkflowEngine(repo: repo.path, spec: try WorkflowSpec.parse(base).get()).runExplained()
+    #expect(Set(without.report.builds.map(\.slug)) == ["recorded", "later"])
+
+    let r = WorkflowEngine(repo: repo.path, spec: try WorkflowSpec.parse(withMerged).get()).runExplained()
+    let slugs = Set(r.report.builds.map(\.slug))
+    #expect(!slugs.contains("recorded"))
+    #expect(r.skipped.contains("origin/task/recorded: already merged into origin/main"))
+    #expect(slugs == ["later"])
+}
+
+@Test func mergedIsForBranchesAndNeedsAState() {
+    let folders = WorkflowSpec.parse([
+        "builds": ["from": "folders", "folder": "work/{slug}"], "state": ["file": "s.md"], "merged": ["state": "x"],
+    ])
+    if case .success = folders { Issue.record("merged on folder builds must fail") }
+    let noState = WorkflowSpec.parse(["builds": ["from": "branches", "branch": "t/{slug}"], "merged": ["state": "x"]])
+    if case .success = noState { Issue.record("merged without state must fail") }
+}
